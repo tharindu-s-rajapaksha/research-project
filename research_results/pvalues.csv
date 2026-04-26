@@ -1,0 +1,10 @@
+Experiment,Comparison,t_stat,p_value,sig_0.05
+Experiment_1,Full vs Ablated NA,-0.9014,0.378283,False
+Experiment_1,Full vs Ablated 5-HT,-0.0496,0.960725,False
+Experiment_1,Full vs Static Baseline,-0.7323,0.472385,False
+Experiment_2,Full vs Ablated NA,0.0518,0.958707,False
+Experiment_2,Full vs Ablated 5-HT,1.564,0.119532,False
+Experiment_2,Full vs Static Baseline,1.4403,0.151444,False
+Experiment_3,Full vs Ablated NA,1.1167,0.278973,False
+Experiment_3,Full vs Ablated 5-HT,0.8036,0.433654,False
+Experiment_3,Full vs Static Baseline,-2.9446,0.014665,True

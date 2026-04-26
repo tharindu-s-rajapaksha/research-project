@@ -1,0 +1,13 @@
+Experiment,Configuration,Total_Reward,Adaptation_Latency,Death_Count,Survival_Rate,Recovery_Time
+Experiment_1,Full Model,3783.3320558223254,289.0,,,
+Experiment_1,Ablated NA,4607.33205582233,500.0,,,
+Experiment_1,Ablated 5-HT,3799.3320558223263,289.0,,,
+Experiment_1,Static Baseline,4765.332055822325,360.0,,,
+Experiment_2,Full Model,-14470.0,,302.0,16.43046357615894,
+Experiment_2,Ablated NA,-16270.0,,320.0,15.58125,
+Experiment_2,Ablated 5-HT,-36135.0,,493.0,10.109533468559837,
+Experiment_2,Static Baseline,-37180.0,,503.0,9.920477137176938,
+Experiment_3,Full Model,14164.0,,,,300.0
+Experiment_3,Ablated NA,13825.0,,,,300.0
+Experiment_3,Ablated 5-HT,13932.0,,,,300.0
+Experiment_3,Static Baseline,79784.0,,,,300.0

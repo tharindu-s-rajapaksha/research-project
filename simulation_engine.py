@@ -464,7 +464,7 @@ def run_full_ablation_mode(exp_id: int):
     
     # Export results
     print("\n> Exporting CSV results...")
-    export_csv(all_results)
+    evaluation.export_csv(all_results)
     
     # Print conclusions
     print_scientific_conclusions(all_results)

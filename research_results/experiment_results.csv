@@ -1,0 +1,5 @@
+Experiment,Configuration,Total_Reward,Death_Count,Survival_Rate
+Experiment_2,Full Model,-13850.0,294,16.989795918367346
+Experiment_2,Ablated NA,-16690.0,326,15.337423312883436
+Experiment_2,Ablated 5-HT,-36150.0,499,10.004008016032063
+Experiment_2,Static Baseline,-37395.0,502,9.958167330677291

@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+.DS_Store
+__pycache__
+.idea
+KMS
+.venv
+.vscode
+*.egg-info
+.pytest_cache
+.ruff_cache
+.directory
+# Local RAG knowledge base artifacts
+research_results/

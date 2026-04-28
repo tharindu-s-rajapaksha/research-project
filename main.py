@@ -13,6 +13,7 @@ import sys
 import time
 import torch
 import numpy as np
+import argparse
 
 import config as cfg
 from ablation import (run_ablation_study, plot_comparative_bars,
@@ -21,6 +22,10 @@ from evaluation import export_csv, compute_pvalues, plot_regret_curve
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Multi-Neuromodulated Modular RL Suite")
+    parser.add_argument("--exp", type=int, choices=[1, 2, 3], help="Only run ablation study for a specific experiment (1, 2, or 3)")
+    args = parser.parse_args()
+
     print("=" * 60)
     print("  Multi-Neuromodulated Modular RL Architecture")
     print("  Research Experiment Suite")
@@ -28,6 +33,8 @@ def main():
     print(f"  Device:  {cfg.DEVICE}")
     print(f"  Seed:    {cfg.SEED}")
     print(f"  Output:  {cfg.RESULTS_DIR}")
+    if args.exp:
+        print(f"  Target:  Experiment {args.exp}")
     print("=" * 60)
 
     os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
@@ -38,8 +45,8 @@ def main():
 
     start = time.time()
 
-    # ── Run full ablation study (all experiments × all configs) ──
-    all_results = run_ablation_study(seed=cfg.SEED)
+    # ── Run ablation study (specific experiment or all) ──
+    all_results = run_ablation_study(seed=cfg.SEED, exp_id=args.exp)
 
     # ── Comparative bar charts ──
     print("\n> Generating comparative bar charts...")

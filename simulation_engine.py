@@ -18,6 +18,7 @@ from worker import LocalRLWorker
 from environments import VolatileBandit, HighStakesForaging
 import experiments
 import evaluation
+from ablation import run_ablation_study, plot_comparative_bars, print_scientific_conclusions
 
 # ---------------------------------------------------------
 # Colors
@@ -444,44 +445,49 @@ def run_fast_mode(exp_id: int):
     print(f"Results dashboard saved to: {cfg.RESULTS_DIR}")
 
 # ---------------------------------------------------------
+# Full Ablation Runner
+# ---------------------------------------------------------
+def run_full_ablation_mode(exp_id: int):
+    print("=" * 60)
+    print(f" Running FULL ABLATION STUDY for Experiment {exp_id}")
+    print("=" * 60)
+    print(" This will run all 4 configurations (Full, Ablated NA, Ablated 5-HT, Static).")
+    
+    start_time = time.time()
+    
+    # Run ablation study for the specific experiment
+    all_results = run_ablation_study(seed=cfg.SEED, exp_id=exp_id)
+    
+    # Generate comparative plots
+    print("\n> Generating comparative bar charts...")
+    plot_comparative_bars(all_results)
+    
+    # Export results
+    print("\n> Exporting CSV results...")
+    export_csv(all_results)
+    
+    # Print conclusions
+    print_scientific_conclusions(all_results)
+    
+    print(f"Full ablation study completed in {time.time() - start_time:.2f} seconds.")
+    print(f"All dashboards and comparison plots saved to: {cfg.RESULTS_DIR}")
+
+# ---------------------------------------------------------
 # Main Entry Point
 # ---------------------------------------------------------
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Multi-Neuromodulated RL Simulation")
-    parser.add_argument("--exp", type=int, choices=[1, 2, 3], help="Experiment to run (1: Bandit, 2: Foraging, 3: CartPole)")
-    parser.add_argument("--mode", type=str, choices=["live", "fast"], help="Mode: live (with visual UI) or fast (background train)")
+    parser = argparse.ArgumentParser(description="Multi-Neuromodulated RL Simulation Engine")
+    parser.add_argument("--exp", type=int, choices=[1, 2, 3], required=True,
+                        help="Experiment to run: 1 (Bandit), 2 (Foraging), 3 (CartPole)")
+    parser.add_argument("--mode", type=str, choices=["live", "fast", "ablation"], required=True,
+                        help="Execution mode: live (UI), fast (background), or ablation (full analysis)")
     
     args = parser.parse_args()
-    
-    # Interactive menu if arguments are missing
-    if not args.exp or not args.mode:
-        print("\n=== Simulation Engine ===")
-        print("Select Experiment:")
-        print("1. Volatile Bandit (NA Test)")
-        print("2. High-Stakes Foraging (5-HT Test)")
-        print("3. CartPole Physics Adaptation (DA/NA Test)")
-        try:
-            exp_choice = int(input("Enter 1, 2, or 3: "))
-            if exp_choice not in [1, 2, 3]: raise ValueError
-        except ValueError:
-            print("Invalid experiment choice. Exiting.")
-            sys.exit(1)
-            
-        print("\nSelect Mode:")
-        print("1. Live Simulation (Normal speed with manual speed changing + visual UI)")
-        print("2. Fast Mode (Train in background fast without UI)")
-        try:
-            mode_choice = int(input("Enter 1 or 2: "))
-            mode_str = "live" if mode_choice == 1 else "fast"
-        except ValueError:
-            print("Invalid mode choice. Exiting.")
-            sys.exit(1)
-            
-        args.exp = exp_choice
-        args.mode = mode_str
 
     if args.mode == "fast":
         run_fast_mode(args.exp)
+    elif args.mode == "ablation":
+        run_full_ablation_mode(args.exp)
     else:
         print(f"\nStarting Live Simulation for Experiment {args.exp}...")
         print("Controls: [SPACE] Pause/Play | [UP/DOWN] Change Speed")

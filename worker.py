@@ -56,23 +56,19 @@ class LocalRLWorker:
         • Discount      γ  (TD target computation)
     """
 
-    def __init__(self, state_dim: int, action_dim: int,
-                 device: torch.device = cfg.DEVICE):
+    def __init__(self, state_dim: int, action_dim: int, device: torch.device = cfg.DEVICE):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.device = device
 
         # Online & Target networks (with differentiable plasticity)
-        self.policy_net = PlasticNetwork(
-            state_dim, cfg.HIDDEN_DIM, action_dim).to(device)
-        self.target_net = PlasticNetwork(
-            state_dim, cfg.HIDDEN_DIM, action_dim).to(device)
+        self.policy_net = PlasticNetwork(state_dim, cfg.HIDDEN_DIM, action_dim).to(device)
+        self.target_net = PlasticNetwork(state_dim, cfg.HIDDEN_DIM, action_dim).to(device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
         # Optimizer — lr will be overridden each step
-        self.optimizer = optim.Adam(
-            self.policy_net.parameters(), lr=cfg.ALPHA_BASE)
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=cfg.ALPHA_BASE)
 
         # Replay
         self.memory = ReplayBuffer()
@@ -88,8 +84,7 @@ class LocalRLWorker:
     # ──────────────────────────────────────────────────────────────────
     # Action selection
     # ──────────────────────────────────────────────────────────────────
-    def select_action(self, state: np.ndarray,
-                      hormone_signal: float = 1.0) -> int:
+    def select_action(self, state: np.ndarray, hormone_signal: float = 1.0) -> int:
         """Softmax action selection with modulable temperature τ.
 
         Args:
@@ -141,8 +136,7 @@ class LocalRLWorker:
         states = torch.FloatTensor(np.array(batch.state)).to(self.device)
         actions = torch.LongTensor(batch.action).unsqueeze(1).to(self.device)
         rewards = torch.FloatTensor(batch.reward).to(self.device)
-        next_states = torch.FloatTensor(
-            np.array(batch.next_state)).to(self.device)
+        next_states = torch.FloatTensor(np.array(batch.next_state)).to(self.device)
         dones = torch.FloatTensor(batch.done).to(self.device)
 
         # Q(s, a)

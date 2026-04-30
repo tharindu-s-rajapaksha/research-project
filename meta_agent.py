@@ -27,7 +27,7 @@ class HormonalMetaAgent:
 
     It translates the raw hormone levels into dynamic hyperparameters
     for the Local Worker (Section 4B):
-        α_t  = α_base × DA_concentration        (Learning Rate)
+        α_t  = α_base × DA_concentration         (Learning Rate)
         τ_t  = τ_base × (1 / NA_concentration)   (Softmax Temperature)
         γ_t  = γ_base × σ(5HT)                   (Discount Factor)
     """
@@ -82,9 +82,9 @@ class HormonalMetaAgent:
         self.history_gamma.append(gamma)
 
         return {
-            "alpha": alpha,
-            "tau":   tau,
-            "gamma": gamma,
+            "alpha" : alpha,
+            "tau"   : tau,
+            "gamma" : gamma,
             **hormones,
         }
 

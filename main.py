@@ -24,6 +24,7 @@ from evaluation import export_csv, compute_pvalues, plot_regret_curve
 def main():
     parser = argparse.ArgumentParser(description="Multi-Neuromodulated Modular RL Suite")
     parser.add_argument("--exp", type=int, choices=[1, 2, 3], help="Only run ablation study for a specific experiment (1, 2, or 3)")
+    parser.add_argument("--merge", action="store_true", help="Merge all experiment ablation charts into one file (default: separate)")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -50,16 +51,16 @@ def main():
 
     # ── Comparative bar charts ──
     print("\n> Generating comparative bar charts...")
-    plot_comparative_bars(all_results)
+    plot_comparative_bars(all_results, merge=args.merge)
 
     # ── Regret curves for Full Model ──
     print("\n> Generating regret curves...")
-    if "Full Model" in all_results["Experiment_1"]:
+    if "Experiment_1" in all_results and "Full Model" in all_results["Experiment_1"]:
         plot_regret_curve(
             all_results["Experiment_1"]["Full Model"],
             optimal_reward=cfg.EXP1_REWARD_MU_HI,
             exp_name="Experiment_1")
-    if "Full Model" in all_results["Experiment_2"]:
+    if "Experiment_2" in all_results and "Full Model" in all_results["Experiment_2"]:
         plot_regret_curve(
             all_results["Experiment_2"]["Full Model"],
             optimal_reward=cfg.EXP2_SAFE_REWARD,  # Safe optimal

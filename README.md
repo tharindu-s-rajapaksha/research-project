@@ -41,6 +41,7 @@ python main.py --exp 1   # Volatile Bandit
 python main.py --exp 2   # High-Stakes Foraging
 python main.py --exp 3   # CartPole Adaptation
 ```
+*Note: Add `--merge` to any of the above to combine results into a single chart file.*
 
 #### 3. Interactive Simulation Engine
 To visualize experiments or run specific analyses. Both arguments are **required**:

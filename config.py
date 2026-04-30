@@ -83,9 +83,9 @@ EXP2_DEATH_PENALTY  = -500.0
 EXP3_TRAIN_EPISODES    = 300    # Pre-perturbation training
 EXP3_PERTURB_EPISODE   = 300   # Episode at which gravity changes
 EXP3_POST_EPISODES     = 300   # Post-perturbation episodes
-EXP3_NEW_GRAVITY       = 30.0
-EXP3_NEW_FRICTION      = 0.01
-EXP3_RECOVERY_TARGET   = 400   # Steps to consider "recovered"
+EXP3_NEW_GRAVITY       = 20.0
+EXP3_NEW_FRICTION      = 0.5
+EXP3_RECOVERY_TARGET   = 300   # Steps to consider "recovered"
 
 # ─────────────────────────────────────────────────────────────────────
 # Ablation Study  (Section 9)

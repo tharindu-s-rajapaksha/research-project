@@ -38,14 +38,12 @@ class NeuromodulatedLinear(nn.Module):
         self.eta_trace = eta_trace
 
         # Baseline (slow) weights — updated by backpropagation
-        self.weight = nn.Parameter(
-            torch.empty(out_features, in_features))
+        self.weight = nn.Parameter(torch.empty(out_features, in_features))
         self.bias = nn.Parameter(torch.zeros(out_features))
         nn.init.kaiming_uniform_(self.weight)
 
         # Hebbian eligibility trace — *not* a parameter (no gradient)
-        self.register_buffer(
-            "hebb_trace", torch.zeros(out_features, in_features))
+        self.register_buffer("hebb_trace", torch.zeros(out_features, in_features))
 
         # Learnable plasticity coefficient (α in Backpropamine)
         self.alpha = nn.Parameter(torch.full((out_features, in_features), 0.01))

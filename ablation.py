@@ -69,7 +69,7 @@ def run_ablation_study(seed: int = cfg.SEED, exp_id: int = None) -> dict:
     return all_results
 
 
-def plot_comparative_bars(all_results: dict):
+def plot_comparative_bars(all_results: dict, merge: bool = False):
     """Comparative bar chart: Survival Rate & Adaptation Latency (Sec 9B)."""
     os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
 
@@ -77,14 +77,9 @@ def plot_comparative_bars(all_results: dict):
     colors = ["#2ecc71", "#3498db", "#e74c3c", "#95a5a6"]
     
     active_exps = [k for k in all_results.keys() if all_results[k]]
-    n_plots = len(active_exps)
-    if n_plots == 0: return
+    if not active_exps: return
 
-    fig, axes = plt.subplots(1, n_plots, figsize=(6 * n_plots, 6), squeeze=False)
-    fig.suptitle("Ablation Study — Comparative Results", fontsize=16, fontweight="bold")
-
-    for idx, exp_key in enumerate(active_exps):
-        ax = axes[0, idx]
+    def draw_bar(ax, exp_key):
         if exp_key == "Experiment_1":
             vals = [all_results["Experiment_1"][c]["adaptation_latency"] for c in configs]
             ax.set_ylabel("Steps")
@@ -101,11 +96,26 @@ def plot_comparative_bars(all_results: dict):
         ax.bar(configs, vals, color=colors)
         ax.tick_params(axis="x", rotation=25)
 
-    plt.tight_layout(rect=[0, 0, 1, 0.93])
-    fname = os.path.join(cfg.RESULTS_DIR, "ablation_comparison.png")
-    fig.savefig(fname, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  [Saved] {fname}")
+    if merge:
+        n_plots = len(active_exps)
+        fig, axes = plt.subplots(1, n_plots, figsize=(6 * n_plots, 6), squeeze=False)
+        fig.suptitle("Ablation Study — Comparative Results (Merged)", fontsize=16, fontweight="bold")
+        for idx, exp_key in enumerate(active_exps):
+            draw_bar(axes[0, idx], exp_key)
+        plt.tight_layout(rect=[0, 0, 1, 0.93])
+        fname = os.path.join(cfg.RESULTS_DIR, "ablation_comparison_merged.png")
+        fig.savefig(fname, bbox_inches="tight")
+        plt.close(fig)
+        print(f"  [Saved] {fname}")
+    else:
+        for exp_key in active_exps:
+            fig, ax = plt.subplots(figsize=(8, 6))
+            draw_bar(ax, exp_key)
+            plt.tight_layout()
+            fname = os.path.join(cfg.RESULTS_DIR, f"ablation_comparison_{exp_key.lower()}.png")
+            fig.savefig(fname, bbox_inches="tight")
+            plt.close(fig)
+            print(f"  [Saved] {fname}")
 
 
 def print_scientific_conclusions(all_results: dict):

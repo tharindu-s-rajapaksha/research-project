@@ -40,9 +40,9 @@ class HormoneEngine:
         self.enable_5ht = enable_5ht
 
         # Current concentrations
-        self.da  = cfg.HORMONE_BASELINE
-        self.na  = cfg.HORMONE_BASELINE
-        self.ht  = cfg.HORMONE_BASELINE   # 5-HT
+        self.da  = cfg.HORMONE_BASELINE     # (1.0) DA: Reward Prediction Error (RPE)
+        self.na  = cfg.HORMONE_BASELINE     # (1.0) NA: Unexpected Uncertainty
+        self.ht  = cfg.HORMONE_BASELINE     # (1.0) 5-HT: Aversion / Stress / Risk
 
         # Volatility tracker — moving window of prediction errors
         self._error_history = deque(maxlen=cfg.VOLATILITY_WINDOW)

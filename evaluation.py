@@ -47,6 +47,7 @@ def plot_experiment_1(results: dict, suffix: str = ""):
                label="Switch")
     ax.set(xlabel="Step", ylabel="Reward", title="Reward Dynamics")
     ax.legend(fontsize=8)
+    ax.grid(True, linestyle="--", alpha=0.6)
 
     # Panel 2: Hormones
     ax = axes[0, 1]

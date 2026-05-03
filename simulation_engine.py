@@ -75,16 +75,30 @@ class ScrollingPlot:
             surface.blit(l_surf, (lx + 15, ly))
             lx += l_surf.get_width() + 25
             
+        # Determine global Y bounds first
+        all_vals = [v for dq in self.data for v in dq]
+        min_y = min(self.y_range[0], min(all_vals) if all_vals else self.y_range[0])
+        max_y = max(self.y_range[1], max(all_vals) if all_vals else self.y_range[1])
+        if min_y == max_y: max_y = min_y + 1
+
+        # Draw Grids with Values
+        grid_color = (70, 70, 80)
+        n_grids = 4
+        for k in range(n_grids):
+            val = min_y + (max_y - min_y) * (k / (n_grids - 1))
+            norm = (val - min_y) / (max_y - min_y + 1e-6)
+            py = self.rect.y + self.rect.height - 5 - norm * (self.rect.height - 40)
+            
+            # Draw line
+            pygame.draw.line(surface, grid_color, (self.rect.x, py), (self.rect.x + self.rect.width, py), 1)
+            
+            # Draw text label on the right side
+            val_surf = self.font.render(f"{val:.1f}", True, (150, 150, 150))
+            surface.blit(val_surf, (self.rect.x + self.rect.width - val_surf.get_width() - 5, py - 14))
+
         # Lines
         for i, q in enumerate(self.data):
             if len(q) < 2: continue
-            
-            # Auto-adjust Y bounds for dynamic plots (like rewards)
-            all_vals = [v for dq in self.data for v in dq]
-            min_y = min(self.y_range[0], min(all_vals) if all_vals else self.y_range[0])
-            max_y = max(self.y_range[1], max(all_vals) if all_vals else self.y_range[1])
-            if min_y == max_y: max_y = min_y + 1
-                
             pts = []
             for j, val in enumerate(q):
                 px = self.rect.x + (j / (self.max_pts - 1)) * self.rect.width

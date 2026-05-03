@@ -33,6 +33,10 @@ C_ALPHA = (148, 0, 211)
 C_TAU = (255, 140, 0)
 C_GAMMA = (0, 128, 128)
 
+# UI Window Settings
+WINDOW_WIDTH = 1600
+WINDOW_HEIGHT = 900
+
 # ---------------------------------------------------------
 # Pygame Scrolling Plot
 # ---------------------------------------------------------
@@ -76,7 +80,7 @@ class ScrollingPlot:
             # Get latest value
             val_str = ""
             if len(self.data[i]) > 0:
-                val_str = f": {self.data[i][-1]:.3f}"
+                val_str = f": {self.data[i][-1]:.4f}"
             
             l_surf = self.font.render(f"{label}{val_str}", True, C_TEXT)
             surface.blit(l_surf, (lx + 15, ly))
@@ -147,8 +151,8 @@ class SimulationEngine:
         self.step_accumulator = 0.0
         
         pygame.init()
-        self.width = 1200
-        self.height = 800
+        self.width = WINDOW_WIDTH
+        self.height = WINDOW_HEIGHT
         self.screen = pygame.display.set_mode((self.width, self.height))
         pygame.display.set_caption(f"Experiment {exp_id} - Live Simulation")
         self.clock = pygame.time.Clock()
@@ -157,16 +161,33 @@ class SimulationEngine:
         self.large_font = pygame.font.SysFont("Consolas", 24, bold=True)
         self.huge_font = pygame.font.SysFont("Consolas", 36, bold=True)
         
-        # Dashboard Layout
-        # Story View: Top Half
-        self.story_rect = pygame.Rect(10, 40, 1180, 400)
-        # Metrics: Bottom Half
-        self.plot_hormones = ScrollingPlot(10, 450, 580, 160, "Hormone Concentrations", 
-                                           ["DA_eff", "NA", "5HT"], [C_DA, C_NA, C_5HT], y_range=(0, 2))
-        self.plot_hyperparams = ScrollingPlot(610, 450, 580, 160, "Dynamic Hyperparameters", 
-                                              ["Alpha (LR)", "Tau (Temp)", "Gamma (Disc)"], [C_ALPHA, C_TAU, C_GAMMA], y_range=(0, 2))
-        self.plot_rewards = ScrollingPlot(10, 620, 1180, 160, "Instantaneous Reward", 
-                                          ["Reward"], [(50, 150, 255)], y_range=(-10, 20))
+        # Dashboard Layout (Relative to window size)
+        margin = 10
+        story_h = int(self.height * 0.32)
+        self.story_rect = pygame.Rect(margin, 40, self.width - 2*margin, story_h)
+        
+        # Calculate row dimensions
+        charts_start_y = story_h + 50
+        available_charts_h = self.height - charts_start_y - margin
+        row_h = available_charts_h // 3
+        chart_h = row_h - margin
+        chart_w = (self.width - 4*margin) // 3
+        
+        # Row 1: Individual Hormone Charts
+        y1 = charts_start_y
+        self.plot_da = ScrollingPlot(margin, y1, chart_w, chart_h, "Dopamine (DA_eff)", ["DA_eff"], [C_DA], y_range=(0, 1))
+        self.plot_na = ScrollingPlot(2*margin + chart_w, y1, chart_w, chart_h, "Noradrenaline (NA)", ["NA"], [C_NA], y_range=(0, 1))
+        self.plot_5ht = ScrollingPlot(3*margin + 2*chart_w, y1, chart_w, chart_h, "Serotonin (5-HT)", ["5HT"], [C_5HT], y_range=(0, 1))
+        
+        # Row 2: Individual Hyperparameter Charts
+        y2 = y1 + row_h
+        self.plot_alpha = ScrollingPlot(margin, y2, chart_w, chart_h, "Alpha (Learning Rate)", ["Alpha"], [C_ALPHA], y_range=(0, 0.005))
+        self.plot_tau = ScrollingPlot(2*margin + chart_w, y2, chart_w, chart_h, "Tau (Softmax Temp)", ["Tau"], [C_TAU], y_range=(0, 1))
+        self.plot_gamma = ScrollingPlot(3*margin + 2*chart_w, y2, chart_w, chart_h, "Gamma (Discount)", ["Gamma"], [C_GAMMA], y_range=(0, 1))
+        
+        # Row 3: Instantaneous Reward (Full Width)
+        y3 = y2 + row_h
+        self.plot_rewards = ScrollingPlot(margin, y3, self.width - 2*margin, chart_h, "Instantaneous Reward", ["Reward"], [(50, 150, 255)], y_range=(-10, 20))
         
         self.setup_experiment()
         
@@ -175,8 +196,12 @@ class SimulationEngine:
         np.random.seed(cfg.SEED)
         
         self.step_accumulator = 0.0
-        self.plot_hormones.clear()
-        self.plot_hyperparams.clear()
+        self.plot_da.clear()
+        self.plot_na.clear()
+        self.plot_5ht.clear()
+        self.plot_alpha.clear()
+        self.plot_tau.clear()
+        self.plot_gamma.clear()
         self.plot_rewards.clear()
         
         self.ablation_cfg = cfg.ABLATION_CONFIGS["Full Model"]
@@ -264,8 +289,14 @@ class SimulationEngine:
         pygame.quit()
         
     def _update_plots(self, modulation, reward):
-        self.plot_hormones.add_data([modulation["DA_eff"], modulation["NA"], modulation["5HT"]])
-        self.plot_hyperparams.add_data([modulation["alpha"], modulation["tau"], modulation["gamma"]])
+        self.plot_da.add_data([modulation["DA_eff"]])
+        self.plot_na.add_data([modulation["NA"]])
+        self.plot_5ht.add_data([modulation["5HT"]])
+        
+        self.plot_alpha.add_data([modulation["alpha"]])
+        self.plot_tau.add_data([modulation["tau"]])
+        self.plot_gamma.add_data([modulation["gamma"]])
+        
         if self.exp_id in [1, 2]:
             self.plot_rewards.add_data([reward])
 
@@ -283,9 +314,16 @@ class SimulationEngine:
         self.worker.store_transition(self.state, self.action, self.reward, next_state, float(done))
         td_error = self.worker.update(hormone_signal=hormone_signal)
         modulation = self.meta.step(td_error, self.reward, done)
-        # print(f"step {self.step_i}: reward={self.reward}, td_error={td_error}, da={modulation['DA']}, na={modulation['NA']}, ht={modulation['5HT']}")
         self.worker.set_modulation(modulation["alpha"], modulation["tau"], modulation["gamma"])
         
+        # ===== Debugging Print =====
+
+        # Chart 1: Hormones
+        # print(f"step {self.step_i}: reward={self.reward}, td_error={td_error}, da={modulation['DA']}, na={modulation['NA']}, ht={modulation[' 5HT']}")
+
+        # Chart 2: Hyperparameters
+        # print(f"step {self.step_i} | DA_eff: {modulation['DA_eff']:.2f}, NA: {modulation['NA']:.2f}, 5HT: {modulation['5HT']:.2f} | Alpha: {modulation['alpha']:.4f}, Tau: {modulation['tau']:.2f}, Gamma: {modulation['gamma']:.2f}")
+
         self.state = next_state
         self.step_i += 1
         self._update_plots(modulation, self.reward)
@@ -386,8 +424,14 @@ class SimulationEngine:
             self._render_story_exp3()
             
         # Metrics
-        self.plot_hormones.draw(self.screen)
-        self.plot_hyperparams.draw(self.screen)
+        self.plot_da.draw(self.screen)
+        self.plot_na.draw(self.screen)
+        self.plot_5ht.draw(self.screen)
+        
+        self.plot_alpha.draw(self.screen)
+        self.plot_tau.draw(self.screen)
+        self.plot_gamma.draw(self.screen)
+        
         self.plot_rewards.draw(self.screen)
         
         if finished:

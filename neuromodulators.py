@@ -133,23 +133,33 @@ class HormoneEngine:
     def _compute_na_spike(self, td_error: float) -> float:
         """Noradrenaline spike driven by 'Unexpected Uncertainty' (Section 3A).
 
-        Tracks the moving variance of prediction errors. A sudden shift
-        causes a sustained NA spike.
+        Uses a dual-window mean-shift detector (inspired by Yu & Dayan 2005):
+        compares the mean of recent absolute TD-errors against a longer
+        historical baseline.  A sustained shift in prediction error
+        magnitude indicates the environment has changed, triggering
+        exploration via NA.
         """
         self._error_history.append(abs(td_error))
-        if len(self._error_history) < 2:
+
+        # Warmup: need a full buffer before detection is meaningful
+        if len(self._error_history) < self._error_history.maxlen:
             return 0.0
 
-        observed_vol = float(np.std(list(self._error_history)))
-        
-        # Calculate Z-score of current error to detect unexpected uncertainty (outliers)
-        # Add small epsilon to prevent division by zero
-        z_score = abs(td_error) / (observed_vol + 1e-6)
-        
-        # print(f"td_error: {td_error:.4f}, observed_vol: {observed_vol:.4f}, z_score: {z_score:.4f}")
+        errors = list(self._error_history)
+
+        # Split: recent probe vs historical baseline
+        short_len = max(20, self._error_history.maxlen // 5)
+        recent   = errors[-short_len:]
+        baseline = errors[:-short_len]
+
+        recent_mean   = float(np.mean(recent))
+        baseline_mean = float(np.mean(baseline))
+        baseline_std  = float(np.std(baseline))
+
+        # Z-score: how many baseline-σ does the recent mean deviate?
+        z_score = abs(recent_mean - baseline_mean) / (baseline_std + 1e-6)
 
         if z_score > cfg.VOLATILITY_THRESHOLD:
-            # Spike magnitude proportional to how much it exceeds the threshold
             return (z_score - cfg.VOLATILITY_THRESHOLD) * cfg.NA_SPIKE_SCALE
         return 0.0
 

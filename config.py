@@ -34,8 +34,8 @@ HT_SPIKE_SCALE   = 3.0          # Scaling factor for aversive event → 5-HT spi
 # ─────────────────────────────────────────────────────────────────────
 # Volatility / Risk Trackers  (Section 2A)
 # ─────────────────────────────────────────────────────────────────────
-VOLATILITY_WINDOW = 50          # Moving-average window for prediction errors
-VOLATILITY_THRESHOLD = 2.0      # Std-dev threshold to trigger NA
+VOLATILITY_WINDOW = 200          # History buffer for change detection
+VOLATILITY_THRESHOLD = 2.0       # Z-score threshold: recent mean vs baseline mean
 RISK_PENALTY_THRESHOLD = -50.0  # Reward below this triggers 5-HT spike
 DEATH_PENALTY = -500.0          # Canonical "death" penalty value
 

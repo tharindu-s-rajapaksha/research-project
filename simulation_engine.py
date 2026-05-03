@@ -100,8 +100,9 @@ class ScrollingPlot:
 class SimulationEngine:
     def __init__(self, exp_id: int):
         self.exp_id = exp_id
-        self.speed = 1
+        self.speed = 5  # Steps per second
         self.paused = False
+        self.step_accumulator = 0.0
         
         pygame.init()
         self.width = 1200
@@ -174,6 +175,8 @@ class SimulationEngine:
         finished = False
         
         while running:
+            dt = self.clock.tick(60)  # Maintain 60 FPS for smooth UI
+            
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
@@ -181,12 +184,16 @@ class SimulationEngine:
                     if event.key == pygame.K_SPACE:
                         self.paused = not self.paused
                     elif event.key == pygame.K_UP:
-                        self.speed = min(1000, self.speed + max(1, self.speed // 2))
+                        self.speed = min(10000, int(self.speed * 1.5) + 1)
                     elif event.key == pygame.K_DOWN:
-                        self.speed = max(1, self.speed - max(1, self.speed // 3))
+                        self.speed = max(1, int(self.speed / 1.5))
                         
             if not self.paused and not finished:
-                for _ in range(self.speed):
+                self.step_accumulator += self.speed * (dt / 1000.0)
+                steps_to_run = int(self.step_accumulator)
+                self.step_accumulator -= steps_to_run
+                
+                for _ in range(steps_to_run):
                     if self.exp_id == 1:
                         finished = self._step_exp1()
                     elif self.exp_id == 2:
@@ -198,7 +205,6 @@ class SimulationEngine:
                         break
             
             self.render(finished)
-            self.clock.tick(60)
             
         pygame.quit()
         
@@ -299,7 +305,7 @@ class SimulationEngine:
         if self.exp_id == 3:
             step_info = f"Episode: {self.episode_i} | Step: {self.step_i}"
             
-        bar_text = f"Exp {self.exp_id} | {status} | Speed: {self.speed}x | {step_info}"
+        bar_text = f"Exp {self.exp_id} | {status} | Speed: {self.speed} steps/sec | {step_info}"
         bar_surf = self.font.render(bar_text, True, C_TEXT)
         self.screen.blit(bar_surf, (10, 10))
         

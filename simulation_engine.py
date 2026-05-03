@@ -52,6 +52,10 @@ class ScrollingPlot:
         for i, v in enumerate(vals):
             self.data[i].append(v)
             
+    def clear(self):
+        for q in self.data:
+            q.clear()
+            
     def draw(self, surface):
         pygame.draw.rect(surface, C_PANEL, self.rect)
         pygame.draw.rect(surface, (100, 100, 100), self.rect, 1)
@@ -146,6 +150,11 @@ class SimulationEngine:
         torch.manual_seed(cfg.SEED)
         np.random.seed(cfg.SEED)
         
+        self.step_accumulator = 0.0
+        self.plot_hormones.clear()
+        self.plot_hyperparams.clear()
+        self.plot_rewards.clear()
+        
         self.ablation_cfg = cfg.ABLATION_CONFIGS["Full Model"]
         self.meta = HormonalMetaAgent(
             enable_da=self.ablation_cfg["DA"],
@@ -201,6 +210,14 @@ class SimulationEngine:
                         self.speed = min(10000, int(self.speed * 1.5) + 1)
                     elif event.key == pygame.K_DOWN:
                         self.speed = max(1, int(self.speed / 1.5))
+                    elif event.key == pygame.K_r:
+                        self.setup_experiment()
+                        finished = False
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1 and hasattr(self, 'restart_rect'):
+                        if self.restart_rect.collidepoint(event.pos):
+                            self.setup_experiment()
+                            finished = False
                         
             if not self.paused and not finished:
                 self.step_accumulator += self.speed * (dt / 1000.0)
@@ -324,7 +341,13 @@ class SimulationEngine:
         self.screen.blit(bar_surf, (10, 10))
         
         controls = self.font.render("SPACE: Pause/Play | UP/DOWN: Adjust Speed", True, (150, 150, 150))
-        self.screen.blit(controls, (self.width - controls.get_width() - 10, 10))
+        self.screen.blit(controls, (self.width - controls.get_width() - 10, 15))
+        
+        # Restart Button
+        self.restart_rect = pygame.Rect(self.width - controls.get_width() - 140, 10, 120, 25)
+        pygame.draw.rect(self.screen, (200, 50, 50), self.restart_rect)
+        btn_text = self.font.render("RESTART (R)", True, (255, 255, 255))
+        self.screen.blit(btn_text, (self.restart_rect.centerx - btn_text.get_width()/2, self.restart_rect.centery - btn_text.get_height()/2))
         
         # Story Environment
         pygame.draw.rect(self.screen, C_PANEL, self.story_rect)

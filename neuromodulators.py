@@ -141,13 +141,16 @@ class HormoneEngine:
             return 0.0
 
         observed_vol = float(np.std(list(self._error_history)))
-        volatility_surprise = abs(observed_vol - self._prev_volatility)
-        self._prev_volatility = observed_vol
+        
+        # Calculate Z-score of current error to detect unexpected uncertainty (outliers)
+        # Add small epsilon to prevent division by zero
+        z_score = abs(td_error) / (observed_vol + 1e-6)
+        
+        # print(f"td_error: {td_error:.4f}, observed_vol: {observed_vol:.4f}, z_score: {z_score:.4f}")
 
-        print(f"observed_vol: {observed_vol}, volatility_surprise: {volatility_surprise}")
-
-        if volatility_surprise > cfg.VOLATILITY_THRESHOLD:
-            return volatility_surprise * cfg.NA_SPIKE_SCALE
+        if z_score > cfg.VOLATILITY_THRESHOLD:
+            # Spike magnitude proportional to how much it exceeds the threshold
+            return (z_score - cfg.VOLATILITY_THRESHOLD) * cfg.NA_SPIKE_SCALE
         return 0.0
 
     @staticmethod

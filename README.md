@@ -48,6 +48,14 @@ To visualize experiments or run specific analyses. Both arguments are **required
 ```bash
 python simulation_engine.py --exp <1|2|3> --mode <live|fast|ablation>
 ```
+
+**Examples:**
+```bash
+python simulation_engine.py --exp 1 --mode ablation
+python simulation_engine.py --exp 1 --mode live
+python simulation_engine.py --exp 1 --mode fast
+```
+
 - **Live Mode (`--mode live`)**: Normal speed playback with Pygame visuals.
     - *Controls*: `SPACE` to pause, `UP/DOWN` to adjust speed.
 - **Fast Mode (`--mode fast`)**: Train a single Full Model in the background at maximum speed.

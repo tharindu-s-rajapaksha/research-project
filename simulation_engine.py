@@ -60,12 +60,18 @@ class ScrollingPlot:
         t_surf = self.title_font.render(self.title, True, C_TEXT)
         surface.blit(t_surf, (self.rect.x + 5, self.rect.y + 5))
         
-        # Legend
+        # Legend & Current Values
         lx = self.rect.x + 5
         ly = self.rect.y + 25
         for i, label in enumerate(self.labels):
             pygame.draw.rect(surface, self.colors[i], (lx, ly + 2, 8, 8))
-            l_surf = self.font.render(label, True, C_TEXT)
+            
+            # Get latest value
+            val_str = ""
+            if len(self.data[i]) > 0:
+                val_str = f": {self.data[i][-1]:.3f}"
+            
+            l_surf = self.font.render(f"{label}{val_str}", True, C_TEXT)
             surface.blit(l_surf, (lx + 15, ly))
             lx += l_surf.get_width() + 25
             

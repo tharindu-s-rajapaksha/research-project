@@ -11,7 +11,7 @@ import torch
 # ─────────────────────────────────────────────────────────────────────
 # General
 # ─────────────────────────────────────────────────────────────────────
-DEVICE = torch.device("cpu")  # CPU for stability; networks are small
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu") # CPU or GPU
 SEED = 42
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research_results")
 
@@ -48,9 +48,9 @@ ETA_TRACE = 0.01                # η_trace  — trace accumulation rate
 # ─────────────────────────────────────────────────────────────────────
 # Worker DQN  (Section 2B + 4B)
 # ─────────────────────────────────────────────────────────────────────
-ALPHA_BASE   = 1e-3             # α_base   — base learning rate
-TAU_BASE     = 1.0              # τ_base   — base softmax temperature
-GAMMA_BASE   = 0.99             # γ_base   — base discount factor
+ALPHA_BASE   = 1e-3             # α_base (DA)  — base learning rate
+TAU_BASE     = 1.0              # τ_base (NA)  — base softmax exploration temperature
+GAMMA_BASE   = 0.99             # γ_base (5HT) — base discount factor
 
 HIDDEN_DIM   = 128              # Hidden layer width
 REPLAY_SIZE  = 10_000           # Experience-replay buffer capacity

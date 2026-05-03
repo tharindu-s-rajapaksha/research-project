@@ -93,8 +93,18 @@ def plot_comparative_bars(all_results: dict, merge: bool = False):
             ax.set_ylabel("Episodes")
             ax.set_title("Exp 3: Recovery Time")
         
-        ax.bar(configs, vals, color=colors)
+        bars = ax.bar(configs, vals, color=colors)
         ax.tick_params(axis="x", rotation=25)
+        
+        # Add labels on top of bars
+        for bar in bars:
+            height = bar.get_height()
+            ax.annotate(f'{height:.1f}',
+                        xy=(bar.get_x() + bar.get_width() / 2, height),
+                        xytext=(0, 3), # 3 points vertical offset
+                        textcoords="offset points",
+                        ha='center', va='bottom',
+                        fontsize=9, fontweight='bold')
 
     if merge:
         n_plots = len(active_exps)

@@ -6,7 +6,7 @@ hormonal concentrations for Dopamine (DA), Noradrenaline (NA), and
 Serotonin (5-HT).
 
 Key equations (Section 3):
-    C_{t+1} = C_t · exp(-k) + SpikeValue          (Accumulation & Decay)
+    C_{t+1} = B + (C_t − B) · exp(−k) + SpikeValue   (Homeostatic Decay)
     DA_eff  = DA_raw · (1 − σ(5HT))               (Opponent Processing)
 """
 
@@ -112,10 +112,14 @@ class HormoneEngine:
     @staticmethod
     def _decay(current: float, k: float, spike: float,
                enabled: bool) -> float:
-        """C_{t+1} = C_t · exp(-k) + spike  (clamped to baseline if disabled)."""
+        """C_{t+1} = baseline + (C_t - baseline) · exp(-k) + spike.
+
+        Decays toward HORMONE_BASELINE (homeostasis), not toward zero.
+        After a spike the concentration returns to the resting tonic level.
+        """
         if not enabled:
             return cfg.HORMONE_BASELINE
-        new_val = current * math.exp(-k) + spike
+        new_val = cfg.HORMONE_BASELINE + (current - cfg.HORMONE_BASELINE) * math.exp(-k) + spike
         return max(new_val, 0.0)  # Concentrations are non-negative
 
     def _compute_da_spike(self, td_error: float) -> float:
@@ -139,6 +143,8 @@ class HormoneEngine:
         observed_vol = float(np.std(list(self._error_history)))
         volatility_surprise = abs(observed_vol - self._prev_volatility)
         self._prev_volatility = observed_vol
+
+        print(f"observed_vol: {observed_vol}, volatility_surprise: {volatility_surprise}")
 
         if volatility_surprise > cfg.VOLATILITY_THRESHOLD:
             return volatility_surprise * cfg.NA_SPIKE_SCALE

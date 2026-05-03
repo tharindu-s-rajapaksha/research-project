@@ -17,7 +17,7 @@ RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research
 
 # ─────────────────────────────────────────────────────────────────────
 # Hormone Engine — Accumulation & Decay  (Section 3A)
-# C_{t+1} = C_t * exp(-k) + SpikeValue
+# C_{t+1} = B + (C_t - B) * exp(-k) + SpikeValue   (Homeostatic Decay)
 # ─────────────────────────────────────────────────────────────────────
 HORMONE_BASELINE = 1.0          # Resting concentration
 HORMONE_DECAY_DA  = 0.1         # k for Dopamine

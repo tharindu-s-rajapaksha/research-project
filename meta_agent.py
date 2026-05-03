@@ -127,12 +127,12 @@ class HormonalMetaAgent:
 
     @staticmethod
     def _modulate_temperature(na: float) -> float:
-        """τ_t = τ_base × (1 / clip(NA, 0.1, 10)).
+        """τ_t = τ_base × clip(NA, 0.1, 10.0).
 
-        High NA → low temperature → more random exploration.
-        (Lower temperature in softmax → more uniform distribution.)
+        High NA (uncertainty) → high temperature → more random exploration.
+        (Higher temperature in softmax → more uniform distribution.)
         """
-        return cfg.TAU_BASE / float(np.clip(na, 0.1, 10.0))
+        return cfg.TAU_BASE * float(np.clip(na, 0.1, 10.0))
 
     @staticmethod
     def _modulate_discount(ht: float) -> float:

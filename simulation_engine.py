@@ -45,14 +45,17 @@ class ScrollingPlot:
         self.y_range = list(y_range)
         self.max_pts = max_pts
         self.data = [collections.deque(maxlen=max_pts) for _ in labels]
+        self.total_points = 0
         self.font = pygame.font.SysFont("Consolas", 12)
         self.title_font = pygame.font.SysFont("Consolas", 14, bold=True)
         
     def add_data(self, vals):
+        self.total_points += 1
         for i, v in enumerate(vals):
             self.data[i].append(v)
             
     def clear(self):
+        self.total_points = 0
         for q in self.data:
             q.clear()
             
@@ -85,13 +88,17 @@ class ScrollingPlot:
         max_y = max(self.y_range[1], max(all_vals) if all_vals else self.y_range[1])
         if min_y == max_y: max_y = min_y + 1
 
-        # Draw Grids with Values
+        # Draw Horizontal Grids (Y-axis) with Values
         grid_color = (70, 70, 80)
         n_grids = 4
+        bottom_margin = 18
+        top_margin = 45
+        chart_height = self.rect.height - bottom_margin - top_margin
+        
         for k in range(n_grids):
             val = min_y + (max_y - min_y) * (k / (n_grids - 1))
             norm = (val - min_y) / (max_y - min_y + 1e-6)
-            py = self.rect.y + self.rect.height - 5 - norm * (self.rect.height - 40)
+            py = self.rect.y + self.rect.height - bottom_margin - norm * chart_height
             
             # Draw line
             pygame.draw.line(surface, grid_color, (self.rect.x, py), (self.rect.x + self.rect.width, py), 1)
@@ -99,6 +106,23 @@ class ScrollingPlot:
             # Draw text label on the right side
             val_surf = self.font.render(f"{val:.1f}", True, (150, 150, 150))
             surface.blit(val_surf, (self.rect.x + self.rect.width - val_surf.get_width() - 5, py - 14))
+
+        # Draw Vertical Grids (X-axis) with Values
+        x_step = 50
+        start_x = max(0, self.total_points - self.max_pts)
+        end_x = self.total_points
+        first_grid = (start_x // x_step) * x_step
+        if first_grid < start_x:
+            first_grid += x_step
+            
+        for v_step in range(first_grid, end_x + 1, x_step):
+            j = v_step - start_x
+            px = self.rect.x + (j / max(1, (self.max_pts - 1))) * self.rect.width
+            if self.rect.x <= px <= self.rect.x + self.rect.width:
+                pygame.draw.line(surface, grid_color, (px, self.rect.y + top_margin), (px, self.rect.y + self.rect.height - bottom_margin), 1)
+                val_surf = self.font.render(f"{v_step}", True, (200, 200, 200))
+                # Center text over the vertical line
+                surface.blit(val_surf, (px - val_surf.get_width() / 2, self.rect.y + self.rect.height - bottom_margin + 2))
 
         # Lines
         for i, q in enumerate(self.data):
@@ -108,7 +132,7 @@ class ScrollingPlot:
                 px = self.rect.x + (j / (self.max_pts - 1)) * self.rect.width
                 val = max(min_y, min(max_y, val))
                 norm = (val - min_y) / (max_y - min_y + 1e-6)
-                py = self.rect.y + self.rect.height - 5 - norm * (self.rect.height - 40)
+                py = self.rect.y + self.rect.height - bottom_margin - norm * chart_height
                 pts.append((px, py))
             pygame.draw.lines(surface, self.colors[i], False, pts, 2)
 
@@ -138,11 +162,11 @@ class SimulationEngine:
         self.story_rect = pygame.Rect(10, 40, 1180, 400)
         # Metrics: Bottom Half
         self.plot_hormones = ScrollingPlot(10, 450, 580, 160, "Hormone Concentrations", 
-                                           ["DA_eff", "NA", "5HT"], [C_DA, C_NA, C_5HT], y_range=(0, 5))
+                                           ["DA_eff", "NA", "5HT"], [C_DA, C_NA, C_5HT], y_range=(0, 2))
         self.plot_hyperparams = ScrollingPlot(610, 450, 580, 160, "Dynamic Hyperparameters", 
                                               ["Alpha (LR)", "Tau (Temp)", "Gamma (Disc)"], [C_ALPHA, C_TAU, C_GAMMA], y_range=(0, 2))
         self.plot_rewards = ScrollingPlot(10, 620, 1180, 160, "Instantaneous Reward", 
-                                          ["Reward"], [(50, 150, 255)], y_range=(-10, 50))
+                                          ["Reward"], [(50, 150, 255)], y_range=(-10, 20))
         
         self.setup_experiment()
         
@@ -259,6 +283,7 @@ class SimulationEngine:
         self.worker.store_transition(self.state, self.action, self.reward, next_state, float(done))
         td_error = self.worker.update(hormone_signal=hormone_signal)
         modulation = self.meta.step(td_error, self.reward, done)
+        # print(f"step {self.step_i}: reward={self.reward}, td_error={td_error}, da={modulation['DA']}, na={modulation['NA']}, ht={modulation['5HT']}")
         self.worker.set_modulation(modulation["alpha"], modulation["tau"], modulation["gamma"])
         
         self.state = next_state

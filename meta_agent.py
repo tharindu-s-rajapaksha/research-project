@@ -27,7 +27,7 @@ class HormonalMetaAgent:
 
     It translates the raw hormone levels into dynamic hyperparameters
     for the Local Worker (Section 4B):
-        α_t  = α_base × DA_concentration         (Learning Rate)
+        α_t  = α_base × (1 + |DA_eff − rest|)      (Learning Rate)
         τ_t  = τ_base × (1 / NA_concentration)   (Softmax Temperature)
         γ_t  = γ_base × σ(5HT)                   (Discount Factor)
     """
@@ -118,12 +118,16 @@ class HormonalMetaAgent:
     # ──────────────────────────────────────────────────────────────────
     @staticmethod
     def _modulate_lr(da_eff: float) -> float:
-        """α_t = α_base × clip(DA_eff, 0.1, 5.0).
+        """α_t = α_base × (1 + |DA_eff − DA_eff_rest|).
 
-        DA_eff close to 0 → very low learning (no surprise);
-        DA_eff high → fast learning (reward surprise).
+        Learning rate scales with the MAGNITUDE of surprise, not direction.
+        Both positive surprise (DA_eff >> rest) and negative surprise
+        (DA_eff << rest) drive faster learning.  At rest, α = α_base.
         """
-        return cfg.ALPHA_BASE * float(np.clip(da_eff, 0.1, 5.0))
+        # DA_eff at rest: DA=1.0, 5HT=1.0 → DA_eff = 1.0 × (1 - σ(0)) = 0.5
+        da_eff_rest = cfg.HORMONE_BASELINE * 0.5
+        surprise = 1.0 + abs(da_eff - da_eff_rest)
+        return cfg.ALPHA_BASE * float(np.clip(surprise, 0.5, 5.0))
 
     @staticmethod
     def _modulate_temperature(na: float) -> float:

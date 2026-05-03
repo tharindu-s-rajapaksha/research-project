@@ -44,8 +44,9 @@ class HormoneEngine:
         self.na  = cfg.HORMONE_BASELINE     # (1.0) NA: Unexpected Uncertainty
         self.ht  = cfg.HORMONE_BASELINE     # (1.0) 5-HT: Aversion / Stress / Risk
 
-        # Volatility tracker — moving window of prediction errors
+        # Change detection — moving window of rewards & prediction errors
         self._error_history = deque(maxlen=cfg.VOLATILITY_WINDOW)
+        self._reward_history = deque(maxlen=cfg.VOLATILITY_WINDOW)
         self._prev_volatility = 0.0
 
         # Logging buffers (for visualization)
@@ -70,7 +71,7 @@ class HormoneEngine:
         """
         # 1. Compute raw spikes ------------------------------------------
         da_spike = self._compute_da_spike(td_error)
-        na_spike = self._compute_na_spike(td_error)
+        na_spike = self._compute_na_spike(td_error, reward)
         ht_spike = self._compute_ht_spike(reward, done)
 
         # 2. Accumulation + Decay ----------------------------------------
@@ -99,6 +100,7 @@ class HormoneEngine:
         self.na = cfg.HORMONE_BASELINE
         self.ht = cfg.HORMONE_BASELINE
         self._error_history.clear()
+        self._reward_history.clear()
         self._prev_volatility = 0.0
 
     def get_vector(self) -> np.ndarray:
@@ -130,34 +132,39 @@ class HormoneEngine:
         """
         return td_error * cfg.DA_SPIKE_SCALE
 
-    def _compute_na_spike(self, td_error: float) -> float:
+    def _compute_na_spike(self, td_error: float, reward: float) -> float:
         """Noradrenaline spike driven by 'Unexpected Uncertainty' (Section 3A).
 
-        Uses a dual-window mean-shift detector (inspired by Yu & Dayan 2005):
-        compares the mean of recent absolute TD-errors against a longer
-        historical baseline.  A sustained shift in prediction error
-        magnitude indicates the environment has changed, triggering
-        exploration via NA.
+        Uses dual-window mean-shift detection on BOTH rewards and absolute
+        TD-errors.  Fires when EITHER signal shows a statistically
+        significant shift, making the detector robust regardless of how
+        well-trained the agent is.
         """
         self._error_history.append(abs(td_error))
+        self._reward_history.append(reward)
 
-        # Warmup: need a full buffer before detection is meaningful
-        if len(self._error_history) < self._error_history.maxlen:
+        # Warmup: need full buffers
+        if len(self._reward_history) < self._reward_history.maxlen:
             return 0.0
 
+        short_len = max(20, self._reward_history.maxlen // 5)
+
+        # Signal 1: Reward mean-shift
+        rewards = list(self._reward_history)
+        r_recent   = rewards[-short_len:]
+        r_baseline = rewards[:-short_len]
+        r_z = abs(float(np.mean(r_recent)) - float(np.mean(r_baseline))) / \
+              (float(np.std(r_baseline)) + 1e-6)
+
+        # Signal 2: TD-error mean-shift
         errors = list(self._error_history)
+        e_recent   = errors[-short_len:]
+        e_baseline = errors[:-short_len]
+        e_z = abs(float(np.mean(e_recent)) - float(np.mean(e_baseline))) / \
+              (float(np.std(e_baseline)) + 1e-6)
 
-        # Split: recent probe vs historical baseline
-        short_len = max(20, self._error_history.maxlen // 5)
-        recent   = errors[-short_len:]
-        baseline = errors[:-short_len]
-
-        recent_mean   = float(np.mean(recent))
-        baseline_mean = float(np.mean(baseline))
-        baseline_std  = float(np.std(baseline))
-
-        # Z-score: how many baseline-σ does the recent mean deviate?
-        z_score = abs(recent_mean - baseline_mean) / (baseline_std + 1e-6)
+        # Take the stronger signal
+        z_score = max(r_z, e_z)
 
         if z_score > cfg.VOLATILITY_THRESHOLD:
             return (z_score - cfg.VOLATILITY_THRESHOLD) * cfg.NA_SPIKE_SCALE

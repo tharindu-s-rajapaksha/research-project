@@ -62,8 +62,8 @@ EPSILON_MIN  = 0.01             # Floor for ε (static baseline)
 # Experiment 1 — Volatile Multi-Armed Bandit  (Section 5)
 # ─────────────────────────────────────────────────────────────────────
 EXP1_N_ARMS        = 5
-EXP1_TOTAL_STEPS   = 1_000
-EXP1_SWITCH_STEP   = 500
+EXP1_TOTAL_STEPS   = 5_000
+EXP1_SWITCH_STEPS  = [500, 1000, 1500, 2200, 3700]
 EXP1_REWARD_MU_HI  = 10.0
 EXP1_REWARD_MU_LO  = 2.0
 EXP1_REWARD_SIGMA  = 1.0

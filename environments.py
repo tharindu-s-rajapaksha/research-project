@@ -27,24 +27,24 @@ class VolatileBandit:
     """
 
     def __init__(self, n_arms: int = cfg.EXP1_N_ARMS,
-                 switch_step: int = cfg.EXP1_SWITCH_STEP,
+                 switch_steps: list = cfg.EXP1_SWITCH_STEPS,
                  seed: int = cfg.SEED):
         self.n_arms = n_arms
-        self.switch_step = switch_step
+        self.switch_steps = sorted(switch_steps)
         self.rng = np.random.RandomState(seed)
         self._step = 0
-
-        # Reward means — pre-switch
-        self.means_pre = np.full(n_arms, cfg.EXP1_REWARD_MU_LO)
-        self.means_pre[0] = cfg.EXP1_REWARD_MU_HI
-
-        # Reward means — post-switch
-        self.means_post = np.full(n_arms, cfg.EXP1_REWARD_MU_LO)
-        self.means_post[0] = 0.0
-        self.means_post[4] = cfg.EXP1_REWARD_MU_HI
-
         self.sigma = cfg.EXP1_REWARD_SIGMA
         self._state = np.zeros(n_arms, dtype=np.float32)
+
+        # Define sequence of optimal arms to cycle through
+        self.optimal_sequence = [0, 4, 1, 3, 2]
+        # Extend sequence to cover all phases (number of switches + 1)
+        while len(self.optimal_sequence) <= len(self.switch_steps):
+            self.optimal_sequence.extend([0, 4, 1, 3, 2])
+            
+        self.current_optimal_arm = self.optimal_sequence[0]
+        self.current_means = np.full(n_arms, cfg.EXP1_REWARD_MU_LO)
+        self.current_means[self.current_optimal_arm] = cfg.EXP1_REWARD_MU_HI
 
     @property
     def observation_dim(self) -> int:
@@ -65,9 +65,14 @@ class VolatileBandit:
         Returns:
             (state, reward, done, truncated, info)
         """
-        means = (self.means_pre if self._step < self.switch_step
-                 else self.means_post)
-        reward = float(self.rng.normal(means[action], self.sigma))
+        # Determine current phase based on step count
+        phase = sum(1 for s in self.switch_steps if self._step >= s)
+        self.current_optimal_arm = self.optimal_sequence[phase]
+        
+        self.current_means = np.full(self.n_arms, cfg.EXP1_REWARD_MU_LO)
+        self.current_means[self.current_optimal_arm] = cfg.EXP1_REWARD_MU_HI
+        
+        reward = float(self.rng.normal(self.current_means[action], self.sigma))
 
         # State: one-hot of last action
         self._state = np.zeros(self.n_arms, dtype=np.float32)
@@ -75,8 +80,13 @@ class VolatileBandit:
 
         self._step += 1
         done = self._step >= cfg.EXP1_TOTAL_STEPS
-        info = {"step": self._step, "switched": self._step >= self.switch_step,
-                "optimal_arm": 0 if self._step <= self.switch_step else 4}
+        
+        info = {
+            "step": self._step, 
+            "switched": self._step in self.switch_steps,
+            "optimal_arm": self.current_optimal_arm,
+            "phase": phase
+        }
 
         return self._state.copy(), reward, done, False, info
 

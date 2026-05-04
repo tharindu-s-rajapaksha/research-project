@@ -82,8 +82,9 @@ def run_experiment_1(ablation_cfg: dict = None, seed: int = cfg.SEED,
 
     # Adaptation latency: first step after switch where agent chooses arm 4
     # for 5 consecutive pulls
-    adaptation_latency = cfg.EXP1_TOTAL_STEPS - cfg.EXP1_SWITCH_STEP  # worst
-    post_switch_actions = actions[cfg.EXP1_SWITCH_STEP:]
+    last_switch = cfg.EXP1_SWITCH_STEPS[-1]
+    adaptation_latency = cfg.EXP1_TOTAL_STEPS - last_switch  # worst
+    post_switch_actions = actions[last_switch:]
     consecutive = 0
     for i, a in enumerate(post_switch_actions):
         if a == 4:

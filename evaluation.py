@@ -43,8 +43,8 @@ def plot_experiment_1(results: dict, suffix: str = ""):
             label="Cumulative", color="steelblue")
     ax.plot(steps, _rolling(results["rewards"]), linewidth=2,
             label=f"{cfg.ROLLING_WINDOW}-step avg", color="navy")
-    ax.axvline(cfg.EXP1_SWITCH_STEP, color="red", ls="--",
-               label="Switch")
+    for s in cfg.EXP1_SWITCH_STEPS:
+        ax.axvline(s, color="red", ls="--", alpha=0.8)
     ax.set(xlabel="Step", ylabel="Reward", title="Reward Dynamics")
     ax.legend(fontsize=8)
     ax.grid(True, linestyle="--", alpha=0.6)
@@ -55,7 +55,8 @@ def plot_experiment_1(results: dict, suffix: str = ""):
     ax.plot(h, results["hormones_da_eff"], label="DA(eff)", color="gold")
     ax.plot(h, results["hormones_na"], label="NA", color="crimson")
     ax.plot(h, results["hormones_ht"], label="5-HT", color="seagreen")
-    ax.axvline(cfg.EXP1_SWITCH_STEP, color="red", ls="--", alpha=0.5)
+    for s in cfg.EXP1_SWITCH_STEPS:
+        ax.axvline(s, color="red", ls="--", alpha=0.5)
     ax.set(xlabel="Step", ylabel="Conc.", title="Neuromodulator Levels")
     ax.legend(fontsize=8)
 
@@ -65,7 +66,8 @@ def plot_experiment_1(results: dict, suffix: str = ""):
     ax.plot(hp, results["alpha"], label="α", color="purple")
     ax.plot(hp, results["tau"], label="τ", color="orange")
     ax.plot(hp, results["gamma"], label="γ", color="teal")
-    ax.axvline(cfg.EXP1_SWITCH_STEP, color="red", ls="--", alpha=0.5)
+    for s in cfg.EXP1_SWITCH_STEPS:
+        ax.axvline(s, color="red", ls="--", alpha=0.5)
     ax.set(xlabel="Step", ylabel="Value", title="Hyperparameter Dynamics")
     ax.legend(fontsize=8)
 
@@ -82,7 +84,8 @@ def plot_experiment_1(results: dict, suffix: str = ""):
     sns.heatmap(hist, ax=ax, cmap="YlOrRd",
                 yticklabels=[f"Arm {i}" for i in range(cfg.EXP1_N_ARMS)],
                 cbar_kws={"label": "Freq"})
-    ax.axvline(cfg.EXP1_SWITCH_STEP // ws, color="cyan", lw=2, ls="--")
+    for s in cfg.EXP1_SWITCH_STEPS:
+        ax.axvline(s // ws, color="cyan", lw=2, ls="--")
     ax.set(xlabel=f"Window ({ws} steps)", title="Action Distribution")
 
     plt.tight_layout(rect=[0, 0, 1, 0.95])

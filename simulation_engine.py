@@ -461,8 +461,7 @@ class SimulationEngine:
             pygame.draw.rect(self.screen, (200, 200, 200), (bx, by, bw, bh), 2)
             
             # True Mean Bar
-            means = self.env.means_pre if self.env._step < self.env.switch_step else self.env.means_post
-            mu = means[i]
+            mu = self.env.current_means[i]
             bar_h = (mu / 12.0) * bh # max expected is 10
             bar_y = by + bh - bar_h
             if bar_h > 0:
@@ -474,9 +473,10 @@ class SimulationEngine:
             mu_lbl = self.font.render(f"True μ={mu:.1f}", True, C_TEXT)
             self.screen.blit(mu_lbl, (bx + bw/2 - mu_lbl.get_width()/2, by + bh + 10))
             
-        if self.env._step >= self.env.switch_step:
-            alert = self.huge_font.render("ENVIRONMENT SWITCHED!", True, (255, 100, 100))
-            self.screen.blit(alert, (self.story_rect.centerx - alert.get_width()/2, self.story_rect.y + 10))
+        phase = sum(1 for s in cfg.EXP1_SWITCH_STEPS if self.env._step >= s)
+        if phase > 0:
+            sw_lbl = self.large_font.render(f"SWITCHED! (Phase {phase})", True, (255, 50, 50))
+            self.screen.blit(sw_lbl, (self.story_rect.centerx - sw_lbl.get_width()/2, self.story_rect.top - 20))
 
     def _render_story_exp2(self):
         cx = self.story_rect.centerx

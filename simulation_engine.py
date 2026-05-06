@@ -164,7 +164,9 @@ class SimulationEngine:
         # Dashboard Layout (Relative to window size)
         margin = 10
         story_h = int(self.height * 0.32)
-        self.story_rect = pygame.Rect(margin, 40, self.width - 2*margin, story_h)
+        story_w = int(self.width * 0.78) - margin
+        self.story_rect = pygame.Rect(margin, 40, story_w, story_h)
+        self.metrics_rect = pygame.Rect(story_w + 2*margin, 40, self.width - story_w - 3*margin, story_h)
         
         # Calculate row dimensions
         charts_start_y = story_h + 50
@@ -219,6 +221,11 @@ class SimulationEngine:
             self.total_steps = cfg.EXP1_TOTAL_STEPS
             self.action = None
             self.reward = 0
+            # Live Metrics
+            self.cum_reward = 0.0
+            self.optimal_count = 0
+            self.optimal_percentage = 0.0
+            self.switched_timer = 0
             
         elif self.exp_id == 2:
             self.env = HighStakesForaging(seed=cfg.SEED)
@@ -229,6 +236,10 @@ class SimulationEngine:
             self.action = None
             self.reward = 0
             self.died = False
+            # Live Metrics
+            self.cum_reward = 0.0
+            self.death_count = 0
+            self.survival_steps = 0
             
         elif self.exp_id == 3:
             self.env = gym.make("CartPole-v1", render_mode="rgb_array")
@@ -240,6 +251,10 @@ class SimulationEngine:
             self.step_i = 0
             self.ep_reward = 0
             self.perturbed = False
+            # Live Metrics
+            self.cum_reward = 0.0
+            self.success_count = 0
+            self.last_ep_score = 0.0
             self.total_episodes = cfg.EXP3_TRAIN_EPISODES + cfg.EXP3_POST_EPISODES
 
     def run(self):
@@ -309,17 +324,28 @@ class SimulationEngine:
             
         hormone_signal = self.meta.engine.get_vector()[0]
         self.action = self.worker.select_action(self.state, hormone_signal=hormone_signal)
-        next_state, self.reward, done, _, _ = self.env.step(self.action)
+        next_state, self.reward, done, _, info = self.env.step(self.action)
         
         self.worker.store_transition(self.state, self.action, self.reward, next_state, float(done))
         td_error = self.worker.update(hormone_signal=hormone_signal)
         modulation = self.meta.step(td_error, self.reward, done)
         self.worker.set_modulation(modulation["alpha"], modulation["tau"], modulation["gamma"])
         
+        # Update metrics
+        self.cum_reward += self.reward
+        if info["optimal_arm"] == self.action:
+            self.optimal_count += 1
+        self.optimal_percentage = (self.optimal_count / (self.step_i + 1)) * 100
+        
+        if info["switched"]:
+            self.switched_timer = 20  # Show label for 20 frames/steps
+        elif self.switched_timer > 0:
+            self.switched_timer -= 1
+            
         # ===== Debugging Print =====
 
         # Chart 1: Hormones
-        # print(f"step {self.step_i}: reward={self.reward}, td_error={td_error}, da={modulation['DA']}, na={modulation['NA']}, ht={modulation[' 5HT']}")
+        # print(f"step {self.step_i}: reward={self.reward}, td_error={td_error}, da={modulation['DA']}, na={modulation['NA']}, ht={modulation['5HT']}")
 
         # Chart 2: Hyperparameters
         # print(f"step {self.step_i} | DA_eff: {modulation['DA_eff']:.2f}, NA: {modulation['NA']:.2f}, 5HT: {modulation['5HT']:.2f} | Alpha: {modulation['alpha']:.4f}, Tau: {modulation['tau']:.2f}, Gamma: {modulation['gamma']:.2f}")
@@ -343,6 +369,13 @@ class SimulationEngine:
         modulation = self.meta.step(td_error, self.reward, self.died)
         self.worker.set_modulation(modulation["alpha"], modulation["tau"], modulation["gamma"])
         
+        # Update metrics
+        self.cum_reward += self.reward
+        self.survival_steps += 1
+        if self.died:
+            self.death_count += 1
+            self.survival_steps = 0
+            
         self.state = next_state
         self.step_i += 1
         
@@ -372,12 +405,17 @@ class SimulationEngine:
         self.worker.set_modulation(modulation["alpha"], modulation["tau"], modulation["gamma"])
         
         self.ep_reward += reward
+        self.cum_reward += reward
         self.state = next_state
         self.step_i += 1
         
         self._update_plots(modulation, reward)
         
         if done or self.step_i >= 500:
+            self.last_ep_score = self.ep_reward
+            if self.ep_reward > 200: # Success threshold for LunarLander
+                self.success_count += 1
+                
             self.plot_rewards.add_data([self.ep_reward])
             self.state, _ = self.env.reset()
             self.worker.reset_episode()
@@ -423,7 +461,10 @@ class SimulationEngine:
         elif self.exp_id == 3:
             self._render_story_exp3()
             
-        # Metrics
+        # Metrics Panel (Right Side)
+        self._render_metrics()
+            
+        # Charts
         self.plot_da.draw(self.screen)
         self.plot_na.draw(self.screen)
         self.plot_5ht.draw(self.screen)
@@ -441,6 +482,52 @@ class SimulationEngine:
             self.screen.blit(done_surf, bg_rect)
             
         pygame.display.flip()
+
+    def _render_metrics(self):
+        # Draw Metrics Panel
+        pygame.draw.rect(self.screen, C_PANEL, self.metrics_rect)
+        pygame.draw.rect(self.screen, (150, 150, 150), self.metrics_rect, 1)
+        
+        title = self.large_font.render("LIVE EVALUATION", True, (255, 200, 50))
+        self.screen.blit(title, (self.metrics_rect.x + 20, self.metrics_rect.y + 15))
+
+        if self.exp_id == 1:
+            phase = sum(1 for s in cfg.EXP1_SWITCH_STEPS if self.env._step >= s)
+            if phase > 0:
+                sw_lbl = self.large_font.render(f"PHASE {phase} !", True, (255, 50, 50))
+                self.screen.blit(sw_lbl, (self.metrics_rect.x + 20, self.metrics_rect.y + 40))
+        
+        y_off = self.metrics_rect.y + 80
+        spacing = 35
+        
+        metrics = []
+        if self.exp_id == 1:
+            metrics = [
+                ("Total Reward", f"{self.cum_reward:.1f}"),
+                ("Optimal Pulls", f"{self.optimal_count}"),
+                ("Optimal %", f"{self.optimal_percentage:.1f}%"),
+            ]
+        elif self.exp_id == 2:
+            metrics = [
+                ("Total Reward", f"{self.cum_reward:.1f}"),
+                ("Death Count", f"{self.death_count}"),
+                ("Survival Streak", f"{self.survival_steps} steps"),
+                ("Risk Level", "HIGH" if self.action == 1 else "LOW")
+            ]
+        elif self.exp_id == 3:
+            metrics = [
+                ("Total Score", f"{self.cum_reward:.1f}"),
+                ("Success Count", f"{self.success_count}"),
+                ("Last Ep Score", f"{self.last_ep_score:.1f}"),
+                ("Status", "PERTURBED" if self.perturbed else "NORMAL")
+            ]
+            
+        for label, val in metrics:
+            lbl_surf = self.font.render(label + ":", True, (200, 200, 200))
+            val_surf = self.font.render(val, True, (255, 255, 255))
+            self.screen.blit(lbl_surf, (self.metrics_rect.x + 20, y_off))
+            self.screen.blit(val_surf, (self.metrics_rect.right - val_surf.get_width() - 20, y_off))
+            y_off += spacing
 
     def _render_story_exp1(self):
         n_arms = cfg.EXP1_N_ARMS
@@ -472,11 +559,6 @@ class SimulationEngine:
             
             mu_lbl = self.font.render(f"True μ={mu:.1f}", True, C_TEXT)
             self.screen.blit(mu_lbl, (bx + bw/2 - mu_lbl.get_width()/2, by + bh + 10))
-            
-        phase = sum(1 for s in cfg.EXP1_SWITCH_STEPS if self.env._step >= s)
-        if phase > 0:
-            sw_lbl = self.large_font.render(f"SWITCHED! (Phase {phase})", True, (255, 50, 50))
-            self.screen.blit(sw_lbl, (self.story_rect.centerx - sw_lbl.get_width()/2, self.story_rect.top - 20))
 
     def _render_story_exp2(self):
         cx = self.story_rect.centerx

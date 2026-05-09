@@ -277,6 +277,8 @@ class SimulationEngine:
                     elif event.key == pygame.K_r:
                         self.setup_experiment()
                         finished = False
+                    elif event.key == pygame.K_q:
+                        running = False
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1 and hasattr(self, 'restart_rect'):
                         if self.restart_rect.collidepoint(event.pos):
@@ -441,7 +443,7 @@ class SimulationEngine:
         bar_surf = self.font.render(bar_text, True, C_TEXT)
         self.screen.blit(bar_surf, (10, 10))
         
-        controls = self.font.render("SPACE: Pause/Play | UP/DOWN: Adjust Speed", True, (150, 150, 150))
+        controls = self.font.render("SPACE: Pause/Play | UP/DOWN: Adjust Speed | Q: Exit", True, (150, 150, 150))
         self.screen.blit(controls, (self.width - controls.get_width() - 10, 15))
         
         # Restart Button

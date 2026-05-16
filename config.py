@@ -21,7 +21,7 @@ RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research
 # ─────────────────────────────────────────────────────────────────────
 HORMONE_BASELINE = 1.0          # Resting concentration
 HORMONE_DECAY_DA  = 0.1         # k for Dopamine
-HORMONE_DECAY_NA  = 0.05        # k for Noradrenaline (slower decay)
+HORMONE_DECAY_NA  = 0.08        # k for Noradrenaline  (slower decay)
 HORMONE_DECAY_5HT = 0.03        # k for Serotonin      (slowest decay)
 
 DA_SPIKE_SCALE   = 1.0          # Scaling factor for TD-error → DA spike
@@ -53,7 +53,7 @@ TAU_BASE     = 1.0              # τ_base (NA)  — base softmax exploration tem
 GAMMA_BASE   = 0.99             # γ_base (5HT) — base discount factor
 
 HIDDEN_DIM   = 128              # Hidden layer width
-REPLAY_SIZE  = 10_000           # Experience-replay buffer capacity
+REPLAY_SIZE  = 500              # Experience-replay buffer capacity (CHANGED FROM 10000 to 500)
 BATCH_SIZE   = 64               # Mini-batch size
 TARGET_UPDATE_FREQ = 100        # Steps between target-network syncs
 EPSILON_MIN  = 0.01             # Floor for ε (static baseline)
@@ -62,8 +62,8 @@ EPSILON_MIN  = 0.01             # Floor for ε (static baseline)
 # Experiment 1 — Volatile Multi-Armed Bandit  (Section 5)
 # ─────────────────────────────────────────────────────────────────────
 EXP1_N_ARMS        = 5
-EXP1_TOTAL_STEPS   = 5_000
-EXP1_SWITCH_STEPS  = [500, 1000, 1500, 2200, 3700]
+EXP1_TOTAL_STEPS   = 4_000
+EXP1_SWITCH_STEPS  = [500, 1100, 1800, 3000]
 EXP1_REWARD_MU_HI  = 10.0
 EXP1_REWARD_MU_LO  = 2.0
 EXP1_REWARD_SIGMA  = 1.0

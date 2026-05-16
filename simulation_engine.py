@@ -206,11 +206,13 @@ class SimulationEngine:
         self.plot_gamma.clear()
         self.plot_rewards.clear()
         
-        self.ablation_cfg = cfg.ABLATION_CONFIGS["Full Model"]
+        if not hasattr(self, 'ablation_flags'):
+            self.ablation_flags = {"DA": True, "NA": True, "5HT": True}
+            
         self.meta = HormonalMetaAgent(
-            enable_da=self.ablation_cfg["DA"],
-            enable_na=self.ablation_cfg["NA"],
-            enable_5ht=self.ablation_cfg["5HT"],
+            enable_da=self.ablation_flags["DA"],
+            enable_na=self.ablation_flags["NA"],
+            enable_5ht=self.ablation_flags["5HT"],
         )
         
         if self.exp_id == 1:
@@ -280,10 +282,20 @@ class SimulationEngine:
                     elif event.key == pygame.K_q:
                         running = False
                 elif event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 1 and hasattr(self, 'restart_rect'):
-                        if self.restart_rect.collidepoint(event.pos):
+                    if event.button == 1:
+                        if hasattr(self, 'restart_rect') and self.restart_rect.collidepoint(event.pos):
                             self.setup_experiment()
                             finished = False
+                        if hasattr(self, 'checkboxes'):
+                            for name, rect in self.checkboxes.items():
+                                if rect.collidepoint(event.pos):
+                                    self.ablation_flags[name] = not self.ablation_flags[name]
+                                    if name == "DA":
+                                        self.meta.engine.enable_da = self.ablation_flags["DA"]
+                                    elif name == "NA":
+                                        self.meta.engine.enable_na = self.ablation_flags["NA"]
+                                    elif name == "5HT":
+                                        self.meta.engine.enable_5ht = self.ablation_flags["5HT"]
                         
             if not self.paused and not finished:
                 self.step_accumulator += self.speed * (dt / 1000.0)
@@ -451,6 +463,24 @@ class SimulationEngine:
         pygame.draw.rect(self.screen, (200, 50, 50), self.restart_rect)
         btn_text = self.font.render("RESTART (R)", True, (255, 255, 255))
         self.screen.blit(btn_text, (self.restart_rect.centerx - btn_text.get_width()/2, self.restart_rect.centery - btn_text.get_height()/2))
+        
+        # Ablation Checkboxes
+        cb_x = 750
+        lbl_ablation = self.font.render("Ablation:", True, C_TEXT)
+        self.screen.blit(lbl_ablation, (cb_x, 15))
+        cb_x += lbl_ablation.get_width() + 10
+        
+        self.checkboxes = {}
+        for name in ["DA", "NA", "5HT"]:
+            rect = pygame.Rect(cb_x, 15, 15, 15)
+            self.checkboxes[name] = rect
+            pygame.draw.rect(self.screen, (255, 255, 255), rect, 2 if not self.ablation_flags[name] else 0)
+            if self.ablation_flags[name]:
+                pygame.draw.rect(self.screen, (100, 255, 100), rect)
+            
+            lbl = self.font.render(name, True, C_TEXT)
+            self.screen.blit(lbl, (cb_x + 20, 15))
+            cb_x += 60
         
         # Story Environment
         pygame.draw.rect(self.screen, C_PANEL, self.story_rect)

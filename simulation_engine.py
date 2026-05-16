@@ -14,7 +14,7 @@ import pygame
 
 import config as cfg
 from meta_agent import HormonalMetaAgent
-from worker import LocalRLWorker
+from worker import LocalRLWorker, StaticBaselineWorker
 from environments import VolatileBandit, HighStakesForaging
 import experiments
 import evaluation
@@ -215,9 +215,14 @@ class SimulationEngine:
             enable_5ht=self.ablation_flags["5HT"],
         )
         
+        is_static = not self.ablation_flags["DA"] and not self.ablation_flags["NA"] and not self.ablation_flags["5HT"]
+        
         if self.exp_id == 1:
             self.env = VolatileBandit(seed=cfg.SEED)
-            self.worker = LocalRLWorker(self.env.observation_dim, self.env.action_dim)
+            if is_static:
+                self.worker = StaticBaselineWorker(self.env.observation_dim, self.env.action_dim)
+            else:
+                self.worker = LocalRLWorker(self.env.observation_dim, self.env.action_dim)
             self.state = self.env.reset()
             self.step_i = 0
             self.total_steps = cfg.EXP1_TOTAL_STEPS
@@ -231,7 +236,10 @@ class SimulationEngine:
             
         elif self.exp_id == 2:
             self.env = HighStakesForaging(seed=cfg.SEED)
-            self.worker = LocalRLWorker(self.env.observation_dim, self.env.action_dim)
+            if is_static:
+                self.worker = StaticBaselineWorker(self.env.observation_dim, self.env.action_dim)
+            else:
+                self.worker = LocalRLWorker(self.env.observation_dim, self.env.action_dim)
             self.state = self.env.reset()
             self.step_i = 0
             self.total_steps = cfg.EXP2_TOTAL_STEPS
@@ -247,7 +255,10 @@ class SimulationEngine:
             self.env = gym.make("CartPole-v1", render_mode="rgb_array")
             state_dim = self.env.observation_space.shape[0]
             action_dim = self.env.action_space.n
-            self.worker = LocalRLWorker(state_dim, action_dim)
+            if is_static:
+                self.worker = StaticBaselineWorker(state_dim, action_dim)
+            else:
+                self.worker = LocalRLWorker(state_dim, action_dim)
             self.state, _ = self.env.reset(seed=cfg.SEED)
             self.episode_i = 0
             self.step_i = 0
@@ -451,9 +462,15 @@ class SimulationEngine:
         if self.exp_id == 3:
             step_info = f"Episode: {self.episode_i} | Step: {self.step_i}"
             
-        bar_text = f"Exp {self.exp_id} | {status} | Speed: {self.speed} steps/sec | {step_info}"
+        bar_text = f"Exp {self.exp_id} | {status} | Speed: {self.speed} steps/sec | {step_info} | MODEL: "
         bar_surf = self.font.render(bar_text, True, C_TEXT)
         self.screen.blit(bar_surf, (10, 10))
+        
+        if isinstance(self.worker, StaticBaselineWorker):
+            model_surf = self.font.render("STATIC BASELINE", True, (255, 100, 100))
+        else:
+            model_surf = self.font.render("DYNAMIC RL", True, (100, 255, 100))
+        self.screen.blit(model_surf, (10 + bar_surf.get_width(), 10))
         
         controls = self.font.render("SPACE: Pause/Play | UP/DOWN: Adjust Speed | Q: Exit", True, (150, 150, 150))
         self.screen.blit(controls, (self.width - controls.get_width() - 10, 15))

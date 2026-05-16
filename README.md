@@ -57,7 +57,10 @@ python simulation_engine.py --exp 1 --mode fast
 ```
 
 - **Live Mode (`--mode live`)**: Normal speed playback with Pygame visuals.
-    - *Controls*: `SPACE` to pause, `UP/DOWN` to adjust speed.
+    - *Controls*: `SPACE` to pause, `UP/DOWN` to adjust speed, `R` to restart simulation.
+    - *Live Ablation*: Toggle the **DA, NA, and 5HT checkboxes** at the top of the UI to enable/disable neuromodulation on-the-fly.
+    - *Static Baseline*: To run the true Static Baseline (Standard DQN), uncheck all three hormones and press **`R`** to restart.
+    - *UI Indicators*: A live status bar indicates whether the **DYNAMIC RL** or **STATIC BASELINE** model is currently running.
 - **Fast Mode (`--mode fast`)**: Train a single Full Model in the background at maximum speed.
 - **Ablation Mode (`--mode ablation`)**: Run the full 4-config study for the selected experiment.
 

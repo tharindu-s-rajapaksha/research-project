@@ -104,6 +104,69 @@ def run_multiseed_study(seeds: list = None, exp_id: int = None) -> dict:
     return results
 
 
+def _worker_init():
+    """Pin each worker to a single BLAS/torch thread so N processes do not
+    oversubscribe the CPU (they parallelise across runs, not within one)."""
+    import torch
+    torch.set_num_threads(1)
+
+
+def _run_task(task):
+    """Run ONE (experiment, config, seed) job. Top-level so it is picklable."""
+    exp_id, config_label, seed = task
+    res = _RUNNERS[exp_id](ablation_cfg=cfg.ABLATION_CONFIGS[config_label],
+                           seed=seed, label=config_label)
+    return exp_id, config_label, seed, res
+
+
+def run_multiseed_study_parallel(seeds: list = None, exp_id: int = None,
+                                 n_workers: int = 4,
+                                 force_cpu: bool = True) -> dict:
+    """Parallel version of run_multiseed_study across independent runs.
+
+    Every (experiment, config, seed) is an independent job dispatched to a
+    process pool.  Results are reassembled in sorted-seed order per config so
+    the downstream PAIRED significance tests stay correctly aligned by seed.
+
+    Args:
+        n_workers: number of worker processes (≈ number of CPU cores).
+        force_cpu: run workers on CPU (recommended — these nets are tiny and
+                   CPU avoids GPU launch overhead and memory contention).
+    """
+    import os
+    from concurrent.futures import ProcessPoolExecutor
+
+    seeds = seeds if seeds is not None else cfg.SEEDS
+    exp_ids = [exp_id] if exp_id else [1, 2, 3]
+    exp_keys = [f"Experiment_{i}" for i in exp_ids]
+
+    if force_cpu:
+        # Children inherit this env at spawn → config.DEVICE resolves to CPU.
+        os.environ["NEUROMOD_FORCE_CPU"] = "1"
+
+    tasks = [(i, c, s) for c in cfg.ABLATION_CONFIGS
+             for s in seeds for i in exp_ids]
+    # Collect keyed by seed to preserve pairing regardless of completion order.
+    collected = {k: {c: {} for c in cfg.ABLATION_CONFIGS} for k in exp_keys}
+
+    done, total = 0, len(tasks)
+    print(f"    Dispatching {total} runs across {n_workers} workers "
+          f"({'CPU' if force_cpu else 'default device'})...")
+    with ProcessPoolExecutor(max_workers=n_workers,
+                             initializer=_worker_init) as ex:
+        for exp_i, clabel, seed, res in ex.map(_run_task, tasks):
+            collected[f"Experiment_{exp_i}"][clabel][seed] = res
+            done += 1
+            print(f"    [{done}/{total}] {clabel} | Exp {exp_i} | seed {seed}")
+
+    # Rebuild ordered per-seed lists (sorted seed order → aligned pairing).
+    results = {k: {} for k in exp_keys}
+    for k in exp_keys:
+        for clabel, by_seed in collected[k].items():
+            results[k][clabel] = [by_seed[s] for s in seeds if s in by_seed]
+    return results
+
+
 def _agg_metric(res_list, metric):
     """(mean, ci95, n) for one metric across a config's per-seed runs."""
     return _mean_ci(_metric_vectors(res_list).get(metric, []))

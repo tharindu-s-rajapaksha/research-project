@@ -11,7 +11,13 @@ import torch
 # ─────────────────────────────────────────────────────────────────────
 # General
 # ─────────────────────────────────────────────────────────────────────
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu") # CPU or GPU
+# Device. Set NEUROMOD_FORCE_CPU=1 to force CPU — used by the parallel study
+# runner, since these tiny nets run faster per-process on CPU than on a
+# contended GPU, and N CPU workers give near-linear throughput.
+if os.environ.get("NEUROMOD_FORCE_CPU", "0") == "1":
+    DEVICE = torch.device("cpu")
+else:
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 SEED = 42
 # Seeds for the statistical study. Every config is run on EVERY seed, so the
 # per-seed metric vectors are paired by seed. 5 keeps a full run to ~1h; bump

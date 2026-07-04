@@ -16,7 +16,8 @@ import numpy as np
 import argparse
 
 import config as cfg
-from ablation import (run_multiseed_study, plot_comparative_bars_multiseed,
+from ablation import (run_multiseed_study, run_multiseed_study_parallel,
+                      plot_comparative_bars_multiseed,
                       print_scientific_conclusions_multiseed)
 from evaluation import (summarize_multiseed, compute_multiseed_pvalues,
                         plot_experiment_1, plot_experiment_2,
@@ -27,6 +28,8 @@ def main():
     parser = argparse.ArgumentParser(description="Multi-Neuromodulated Modular RL Suite")
     parser.add_argument("--exp", type=int, choices=[1, 2, 3], help="Only run ablation study for a specific experiment (1, 2, or 3)")
     parser.add_argument("--merge", action="store_true", help="Merge all experiment ablation charts into one file (default: separate)")
+    parser.add_argument("--workers", type=int, default=1, help="Parallel worker processes for the multi-seed study (>1 enables parallelism; ~= CPU cores)")
+    parser.add_argument("--gpu", action="store_true", help="Keep parallel workers on the default device (GPU) instead of forcing CPU")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -46,8 +49,14 @@ def main():
 
     # ── Run the multi-seed ablation study (statistical backbone) ──
     print("\n> Running multi-seed study "
-          f"({len(cfg.SEEDS)} seeds × {len(cfg.ABLATION_CONFIGS)} configs)...")
-    all_ms = run_multiseed_study(seeds=cfg.SEEDS, exp_id=args.exp)
+          f"({len(cfg.SEEDS)} seeds × {len(cfg.ABLATION_CONFIGS)} configs, "
+          f"workers={args.workers})...")
+    if args.workers > 1:
+        all_ms = run_multiseed_study_parallel(seeds=cfg.SEEDS, exp_id=args.exp,
+                                              n_workers=args.workers,
+                                              force_cpu=not args.gpu)
+    else:
+        all_ms = run_multiseed_study(seeds=cfg.SEEDS, exp_id=args.exp)
 
     # ── Dashboards from the first seed (representative visuals) ──
     print("\n> Generating per-config dashboards (seed = %d)..." % cfg.SEEDS[0])

@@ -53,7 +53,8 @@ class NeuromodulatedLinear(nn.Module):
         self.hebb_trace.zero_()
 
     def forward(self, x: torch.Tensor,
-                hormone_signal: float = 1.0) -> torch.Tensor:
+                hormone_signal: float = 1.0,
+                update_trace: bool = True) -> torch.Tensor:
         """Forward pass with plastic weight modulation.
 
         Args:
@@ -61,6 +62,10 @@ class NeuromodulatedLinear(nn.Module):
             hormone_signal:  Scalar from the Meta-Agent's hormonal vector
                              (typically DA_eff). Controls the magnitude of
                              the Hebbian contribution.
+            update_trace:    If False, the eligibility trace is NOT advanced.
+                             Used for the (frozen) target network, whose trace
+                             must stay a fixed snapshot rather than drift with
+                             every target computation.
 
         Returns:
             Output tensor of shape (batch, out_features).
@@ -71,13 +76,14 @@ class NeuromodulatedLinear(nn.Module):
 
         # ── Update eligibility trace (Hebbian rule) ──────────────────
         # E_t = (1 - η_decay) · E_{t-1} + η_trace · (Pre_i × Post_j)
-        with torch.no_grad():
-            # Pre = mean over batch of x;  Post = mean over batch of output
-            pre  = x.mean(dim=0)          # (in_features,)
-            post = output.mean(dim=0)     # (out_features,)
-            outer = torch.outer(post, pre)  # (out, in)
-            self.hebb_trace = ((1.0 - self.eta_decay) * self.hebb_trace
-                               + self.eta_trace * outer)
+        if update_trace:
+            with torch.no_grad():
+                # Pre = mean over batch of x;  Post = mean over batch of output
+                pre  = x.mean(dim=0)          # (in_features,)
+                post = output.mean(dim=0)     # (out_features,)
+                outer = torch.outer(post, pre)  # (out, in)
+                self.hebb_trace = ((1.0 - self.eta_decay) * self.hebb_trace
+                                   + self.eta_trace * outer)
 
         return output
 
@@ -98,17 +104,20 @@ class PlasticNetwork(nn.Module):
         self.head = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x: torch.Tensor,
-                hormone_signal: float = 1.0) -> torch.Tensor:
+                hormone_signal: float = 1.0,
+                update_trace: bool = True) -> torch.Tensor:
         """
         Args:
             x:              State tensor  (batch, input_dim).
             hormone_signal: Scalar modulation from Meta-Agent.
+            update_trace:   If False, Hebbian traces are not advanced
+                            (used for the frozen target network).
 
         Returns:
             Q-values tensor (batch, output_dim).
         """
-        x = F.relu(self.plastic1(x, hormone_signal))
-        x = F.relu(self.plastic2(x, hormone_signal))
+        x = F.relu(self.plastic1(x, hormone_signal, update_trace))
+        x = F.relu(self.plastic2(x, hormone_signal, update_trace))
         return self.head(x)
 
     def reset_traces(self):

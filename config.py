@@ -13,6 +13,10 @@ import torch
 # ─────────────────────────────────────────────────────────────────────
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu") # CPU or GPU
 SEED = 42
+# Seeds for the statistical study. Every config is run on EVERY seed, so the
+# per-seed metric vectors are paired by seed. ≥10 recommended for the final
+# report; trim for quick iteration (heavy: len(SEEDS)×n_configs×3 experiments).
+SEEDS = [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research_results")
 
 # ─────────────────────────────────────────────────────────────────────
@@ -50,7 +54,8 @@ ETA_TRACE = 0.01                # η_trace  — trace accumulation rate
 # ─────────────────────────────────────────────────────────────────────
 ALPHA_BASE   = 1e-3             # α_base (DA)  — base learning rate
 TAU_BASE     = 1.0              # τ_base (NA)  — base softmax exploration temperature
-GAMMA_BASE   = 0.99             # γ_base (5HT) — base discount factor
+GAMMA_BASE   = 0.99             # γ_base (5HT) — base discount factor (agent AT REST)
+GAMMA_MAX    = 0.999            # γ ceiling — horizon when 5-HT is saturated (survival mode)
 
 HIDDEN_DIM   = 128              # Hidden layer width
 REPLAY_SIZE  = 500              # Experience-replay buffer capacity (CHANGED FROM 10000 to 500)
@@ -81,20 +86,32 @@ EXP2_DEATH_PENALTY  = -500.0
 # Experiment 3 — CartPole Physics Adaptation  (Section 7)
 # ─────────────────────────────────────────────────────────────────────
 EXP3_TRAIN_EPISODES    = 300    # Pre-perturbation training
-EXP3_PERTURB_EPISODE   = 300   # Episode at which gravity changes
-EXP3_POST_EPISODES     = 300   # Post-perturbation episodes
-EXP3_NEW_GRAVITY       = 20.0
-EXP3_NEW_FRICTION      = 0.5
-EXP3_RECOVERY_TARGET   = 300   # Steps to consider "recovered"
+EXP3_PERTURB_EPISODE   = 300    # Episode at which the physics changes
+EXP3_POST_EPISODES     = 300    # Post-perturbation episodes
+EXP3_NEW_GRAVITY       = 29.4   # 3× the CartPole default gravity (9.8)
+EXP3_FORCE_SCALE       = 0.5    # Actuator force_mag multiplier (halves push
+                                # strength) — proxy for a changed-dynamics shock
+EXP3_RECOVERY_TARGET   = 400    # Steps sustained to count as "recovered"
+EXP3_COMPETENCE_TARGET = 450    # Pre-perturb rolling mean needed to be "competent"
+EXP3_COMPETENCE_WINDOW = 20     # Episodes averaged for the competence check
 
 # ─────────────────────────────────────────────────────────────────────
 # Ablation Study  (Section 9)
 # ─────────────────────────────────────────────────────────────────────
+# Each config runs on the SAME plastic LocalRLWorker so that the ONLY thing
+# that differs is which neuromodulator is active — a fair, single-variable
+# ablation.  "Static Baseline" is that identical architecture with all
+# hormones frozen at baseline (α/τ/γ constant at their base values), i.e. the
+# static agent the hypothesis claims to beat.  "Vanilla DQN" is a separate
+# plain-MLP ε-greedy reference (marked with "vanilla") — NOT a clean ablation,
+# kept only as an external sanity anchor.
 ABLATION_CONFIGS = {
     "Full Model":      {"DA": True,  "NA": True,  "5HT": True},
-    "Ablated NA":      {"DA": True,  "NA": False, "5HT": True},
-    "Ablated 5-HT":    {"DA": True,  "NA": True,  "5HT": False},
-    "Static Baseline": {"DA": False, "NA": False, "5HT": False},
+    "Ablated DA":      {"DA": False, "NA": True,  "5HT": True},   # isolate DA/plasticity
+    "Ablated NA":      {"DA": True,  "NA": False, "5HT": True},   # isolate adaptation
+    "Ablated 5-HT":    {"DA": True,  "NA": True,  "5HT": False},  # isolate harm aversion
+    "Static Baseline": {"DA": False, "NA": False, "5HT": False},  # same arch, frozen
+    "Vanilla DQN":     {"DA": False, "NA": False, "5HT": False, "vanilla": True},
 }
 
 # ─────────────────────────────────────────────────────────────────────

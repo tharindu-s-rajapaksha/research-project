@@ -20,7 +20,11 @@ import seaborn as sns
 import config as cfg
 from experiments import run_experiment_1, run_experiment_2, run_experiment_3
 from evaluation import (plot_experiment_1, plot_experiment_2,
-                        plot_experiment_3, export_csv, compute_pvalues)
+                        plot_experiment_3, export_csv,
+                        summarize_multiseed, compute_multiseed_pvalues,
+                        _metric_vectors, _mean_ci, _LOWER_IS_BETTER)
+
+_RUNNERS = {1: run_experiment_1, 2: run_experiment_2, 3: run_experiment_3}
 
 
 def run_ablation_study(seed: int = cfg.SEED, exp_id: int = None) -> dict:
@@ -69,13 +73,149 @@ def run_ablation_study(seed: int = cfg.SEED, exp_id: int = None) -> dict:
     return all_results
 
 
+# ======================================================================
+# Multi-seed study (statistical backbone)
+# ======================================================================
+def run_multiseed_study(seeds: list = None, exp_id: int = None) -> dict:
+    """Run every config on every seed, collecting per-seed result dicts.
+
+    Returns:
+        {experiment_name: {config_label: [res_seed0, res_seed1, ...]}}
+
+    Every config sees the SAME set of seeds, so metric vectors are paired
+    by seed for the downstream paired significance tests.
+    """
+    seeds = seeds if seeds is not None else cfg.SEEDS
+    exp_ids = [exp_id] if exp_id else [1, 2, 3]
+    exp_keys = [f"Experiment_{i}" for i in exp_ids]
+    results = {k: {c: [] for c in cfg.ABLATION_CONFIGS} for k in exp_keys}
+
+    n_total = len(cfg.ABLATION_CONFIGS) * len(seeds) * len(exp_ids)
+    done = 0
+    for config_label, abl_cfg in cfg.ABLATION_CONFIGS.items():
+        for seed in seeds:
+            for i in exp_ids:
+                res = _RUNNERS[i](ablation_cfg=abl_cfg, seed=seed,
+                                  label=config_label)
+                results[f"Experiment_{i}"][config_label].append(res)
+                done += 1
+                print(f"    [{done}/{n_total}] {config_label} | "
+                      f"Exp {i} | seed {seed}")
+    return results
+
+
+def _agg_metric(res_list, metric):
+    """(mean, ci95, n) for one metric across a config's per-seed runs."""
+    return _mean_ci(_metric_vectors(res_list).get(metric, []))
+
+
+def plot_comparative_bars_multiseed(multiseed_results: dict,
+                                    merge: bool = False):
+    """Comparative bars with 95% CI error bars, aggregated across seeds."""
+    os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
+    configs = list(cfg.ABLATION_CONFIGS.keys())
+    _palette = ["#2ecc71", "#9b59b6", "#3498db", "#e74c3c", "#95a5a6",
+                "#f39c12", "#1abc9c", "#34495e"]
+    colors = [_palette[i % len(_palette)] for i in range(len(configs))]
+
+    _metric_for = {"Experiment_1": ("Adaptation_Latency", "Steps",
+                                    "Exp 1: Adaptation Latency"),
+                   "Experiment_2": ("Death_Count", "Deaths",
+                                    "Exp 2: Death Count"),
+                   "Experiment_3": ("Recovery_Time", "Episodes",
+                                    "Exp 3: Recovery Time")}
+    active = [k for k in multiseed_results if multiseed_results[k]
+              and k in _metric_for]
+    if not active:
+        return
+
+    def draw(ax, exp_key):
+        metric, ylab, title = _metric_for[exp_key]
+        means, errs = [], []
+        for c in configs:
+            m, ci, _ = _agg_metric(multiseed_results[exp_key].get(c, []), metric)
+            means.append(m)
+            errs.append(0.0 if np.isnan(ci) else ci)
+        bars = ax.bar(configs, means, yerr=errs, capsize=4, color=colors)
+        ax.set_ylabel(ylab)
+        ax.set_title(title)
+        ax.tick_params(axis="x", rotation=25)
+        for bar, m in zip(bars, means):
+            if np.isnan(m):
+                continue
+            ax.annotate(f"{m:.1f}", xy=(bar.get_x() + bar.get_width() / 2, m),
+                        xytext=(0, 3), textcoords="offset points",
+                        ha="center", va="bottom", fontsize=9, fontweight="bold")
+
+    if merge:
+        fig, axes = plt.subplots(1, len(active), figsize=(6 * len(active), 6),
+                                 squeeze=False)
+        fig.suptitle("Ablation Study — Comparative Results (mean ± 95% CI)",
+                     fontsize=16, fontweight="bold")
+        for idx, exp_key in enumerate(active):
+            draw(axes[0, idx], exp_key)
+        plt.tight_layout(rect=[0, 0, 1, 0.93])
+        fname = os.path.join(cfg.RESULTS_DIR, "ablation_comparison_merged.png")
+        fig.savefig(fname, bbox_inches="tight")
+        plt.close(fig)
+        print(f"  [Saved] {fname}")
+    else:
+        for exp_key in active:
+            fig, ax = plt.subplots(figsize=(9, 6))
+            draw(ax, exp_key)
+            plt.tight_layout()
+            fname = os.path.join(cfg.RESULTS_DIR,
+                                 f"ablation_comparison_{exp_key.lower()}.png")
+            fig.savefig(fname, bbox_inches="tight")
+            plt.close(fig)
+            print(f"  [Saved] {fname}")
+
+
+def print_scientific_conclusions_multiseed(multiseed_results: dict):
+    """Report the headline comparisons with means, CIs, and direction, using
+    the aggregated per-seed data (NaN-aware for undefined CartPole recovery).
+    """
+    print("\n" + "=" * 64)
+    print("  SCIENTIFIC CONCLUSIONS  (mean ± 95% CI across seeds)")
+    print("=" * 64)
+
+    def line(exp_key, metric, full_label, other_label, unit):
+        if exp_key not in multiseed_results or not multiseed_results[exp_key]:
+            return
+        exp = multiseed_results[exp_key]
+        if full_label not in exp or other_label not in exp:
+            return
+        fm, fci, fn = _agg_metric(exp[full_label], metric)
+        om, oci, on = _agg_metric(exp[other_label], metric)
+        print(f"\n[{exp_key}] metric = {metric}")
+        print(f"  {full_label:<16}: {fm:.2f} ± {fci:.2f}  (n={fn})")
+        print(f"  {other_label:<16}: {om:.2f} ± {oci:.2f}  (n={on})")
+        if np.isnan(fm) or np.isnan(om):
+            print("  -> Metric undefined for one config (e.g. never competent).")
+            return
+        lower_better = metric in _LOWER_IS_BETTER
+        full_better = (fm < om) if lower_better else (fm > om)
+        denom = abs(om) if om != 0 else 1.0
+        pct = abs(om - fm) / denom * 100
+        verb = "better" if full_better else "worse"
+        print(f"  -> Full Model is {pct:.0f}% {verb} than {other_label}.")
+
+    line("Experiment_1", "Adaptation_Latency", "Full Model", "Ablated NA", "steps")
+    line("Experiment_2", "Death_Count", "Full Model", "Ablated 5-HT", "deaths")
+    line("Experiment_3", "Recovery_Time", "Full Model", "Static Baseline", "episodes")
+    print()
+
+
 def plot_comparative_bars(all_results: dict, merge: bool = False):
     """Comparative bar chart: Survival Rate & Adaptation Latency (Sec 9B)."""
     os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
 
     configs = list(cfg.ABLATION_CONFIGS.keys())
-    colors = ["#2ecc71", "#3498db", "#e74c3c", "#95a5a6"]
-    
+    # One stable colour per config, regardless of how many configs exist.
+    _palette = ["#2ecc71", "#9b59b6", "#3498db", "#e74c3c", "#95a5a6", "#f39c12",
+                "#1abc9c", "#34495e"]
+    colors = [_palette[i % len(_palette)] for i in range(len(configs))]
+
     active_exps = [k for k in all_results.keys() if all_results[k]]
     if not active_exps: return
 

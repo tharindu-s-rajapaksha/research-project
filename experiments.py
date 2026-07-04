@@ -20,20 +20,24 @@ from environments import VolatileBandit, HighStakesForaging
 
 
 def _make_agent(state_dim: int, action_dim: int, ablation_cfg: dict):
-    """Factory: build Meta-Agent + Worker pair based on ablation config."""
-    is_static = (not ablation_cfg["DA"] and not ablation_cfg["NA"]
-                 and not ablation_cfg["5HT"])
-    if is_static:
+    """Factory: build Meta-Agent + Worker pair based on ablation config.
+
+    All configurations use the SAME plastic ``LocalRLWorker`` so the only
+    variable across configs is which hormone is enabled — the "Static
+    Baseline" is simply this worker with every hormone clamped to baseline
+    (α/τ/γ held at their base values).  The single exception is the
+    ``"vanilla": True`` reference config, which swaps in the plain-MLP
+    ε-greedy ``StaticBaselineWorker`` as an external sanity anchor.
+    """
+    meta = HormonalMetaAgent(
+        enable_da=ablation_cfg["DA"],
+        enable_na=ablation_cfg["NA"],
+        enable_5ht=ablation_cfg["5HT"],
+    )
+    if ablation_cfg.get("vanilla", False):
         worker = StaticBaselineWorker(state_dim, action_dim)
-        meta = HormonalMetaAgent(enable_da=False, enable_na=False,
-                                  enable_5ht=False)
     else:
         worker = LocalRLWorker(state_dim, action_dim)
-        meta = HormonalMetaAgent(
-            enable_da=ablation_cfg["DA"],
-            enable_na=ablation_cfg["NA"],
-            enable_5ht=ablation_cfg["5HT"],
-        )
     return meta, worker
 
 
@@ -60,7 +64,7 @@ def run_experiment_1(ablation_cfg: dict = None, seed: int = cfg.SEED,
     meta.hard_reset()
 
     state = env.reset()
-    rewards, actions = [], []
+    rewards, actions, optimal_arms = [], [], []
 
     for step_i in range(cfg.EXP1_TOTAL_STEPS):
         hormone_signal = meta.engine.get_vector()[0]  # DA_eff
@@ -78,26 +82,45 @@ def run_experiment_1(ablation_cfg: dict = None, seed: int = cfg.SEED,
 
         rewards.append(reward)
         actions.append(action)
+        optimal_arms.append(info["optimal_arm"])  # true optimal arm this step
         state = next_state
 
-    # Adaptation latency: first step after switch where agent chooses arm 4
-    # for 5 consecutive pulls
-    last_switch = cfg.EXP1_SWITCH_STEPS[-1]
-    adaptation_latency = cfg.EXP1_TOTAL_STEPS - last_switch  # worst
-    post_switch_actions = actions[last_switch:]
-    consecutive = 0
-    for i, a in enumerate(post_switch_actions):
-        if a == 4:
-            consecutive += 1
-            if consecutive >= 5:
-                adaptation_latency = i - 4  # Start of the run
-                break
-        else:
-            consecutive = 0
+    # ── Adaptation latency (per switch, against the CORRECT new arm) ─────
+    # For each distribution switch, count the steps needed to re-lock onto
+    # the arm that is optimal in the NEW phase (LOCK_N consecutive pulls).
+    # The old code hard-coded "arm 4", but the optimal arm cycles through
+    # optimal_sequence = [0, 4, 1, 3, 2], so after the last switch the
+    # optimum is arm 2 — the old metric could never fire and pinned every
+    # config to the worst-case cap.  We now report the mean latency across
+    # switches plus the per-switch breakdown.
+    LOCK_N = 5
+    switch_steps = sorted(cfg.EXP1_SWITCH_STEPS)
+    phase_bounds = switch_steps + [cfg.EXP1_TOTAL_STEPS]
+    per_switch_latency = []
+    for k, s_start in enumerate(switch_steps):
+        if s_start >= len(actions):              # switch never reached
+            continue
+        s_end = min(phase_bounds[k + 1], len(actions))   # next switch/run end
+        target_arm = optimal_arms[s_start]       # optimal arm in new phase
+        latency = s_end - s_start                # worst case: never re-locks
+        consecutive = 0
+        for j in range(s_start, s_end):
+            if actions[j] == target_arm:
+                consecutive += 1
+                if consecutive >= LOCK_N:
+                    latency = (j - LOCK_N + 1) - s_start  # start of the run
+                    break
+            else:
+                consecutive = 0
+        per_switch_latency.append(latency)
+
+    adaptation_latency = (float(np.mean(per_switch_latency))
+                          if per_switch_latency else 0.0)
 
     return {
         "rewards": rewards,
         "actions": actions,
+        "optimal_arms": optimal_arms,
         "hormones_da": list(meta.engine.history_da),
         "hormones_na": list(meta.engine.history_na),
         "hormones_ht": list(meta.engine.history_ht),
@@ -106,6 +129,7 @@ def run_experiment_1(ablation_cfg: dict = None, seed: int = cfg.SEED,
         "tau": list(meta.history_tau),
         "gamma": list(meta.history_gamma),
         "adaptation_latency": adaptation_latency,
+        "per_switch_latency": per_switch_latency,
         "label": label,
     }
 
@@ -194,12 +218,17 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
     """Run the CartPole physics adaptation experiment.
 
     Phase 1: Train under standard gravity (9.8) for EXP3_TRAIN_EPISODES.
-    Phase 2: Change gravity to 30.0, friction to 0.01, run for
-             EXP3_POST_EPISODES more episodes.
+    Phase 2: At EXP3_PERTURB_EPISODE, shock the dynamics — gravity → 29.4
+             (3× default) and actuator force_mag × EXP3_FORCE_SCALE (0.5) —
+             then run EXP3_POST_EPISODES more episodes.
+
+    Recovery is only defined if the agent was COMPETENT before the shock
+    (pre-perturb rolling mean ≥ EXP3_COMPETENCE_TARGET); otherwise there is
+    nothing to "recover" and recovery_time is NaN.
 
     Returns:
         dict with episode_lengths, hormones, hyperparams, recovery_time,
-        label.
+        pre_competence, is_competent, label.
     """
     if ablation_cfg is None:
         ablation_cfg = cfg.ABLATION_CONFIGS["Full Model"]
@@ -223,9 +252,9 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
         # Apply perturbation at the right episode
         if ep == cfg.EXP3_PERTURB_EPISODE and not perturbed:
             env.unwrapped.gravity = cfg.EXP3_NEW_GRAVITY
-            # CartPole doesn't have a friction parameter directly;
-            # we modify force_mag as a proxy for changed dynamics.
-            env.unwrapped.force_mag = env.unwrapped.force_mag * cfg.EXP3_NEW_FRICTION
+            # CartPole has no friction parameter; we scale force_mag as a
+            # proxy for the changed dynamics (weaker actuator).
+            env.unwrapped.force_mag = env.unwrapped.force_mag * cfg.EXP3_FORCE_SCALE
             perturbed = True
 
         state, _ = env.reset(seed=seed + ep)
@@ -259,19 +288,31 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
 
     env.close()
 
-    # Recovery time: first episode after perturbation that sustains
-    # >= RECOVERY_TARGET steps for 3 consecutive episodes
-    recovery_time = cfg.EXP3_POST_EPISODES  # worst case
+    # ── Pre-perturbation competence gate ────────────────────────────────
+    # "Recovery" is only meaningful if the agent actually solved CartPole
+    # before the shock.  Otherwise there is nothing to recover to, and the
+    # recovery_time is NaN (flagged, not silently capped) so it is excluded
+    # from the recovery statistics rather than polluting them.
+    pre_lengths = episode_lengths[:cfg.EXP3_PERTURB_EPISODE]
+    comp_window = pre_lengths[-cfg.EXP3_COMPETENCE_WINDOW:]
+    pre_competence = float(np.mean(comp_window)) if comp_window else 0.0
+    is_competent = pre_competence >= cfg.EXP3_COMPETENCE_TARGET
+
     post_lengths = episode_lengths[cfg.EXP3_PERTURB_EPISODE:]
-    consecutive = 0
-    for i, length in enumerate(post_lengths):
-        if length >= cfg.EXP3_RECOVERY_TARGET:
-            consecutive += 1
-            if consecutive >= 3:
-                recovery_time = i - 2
-                break
-        else:
-            consecutive = 0
+    if is_competent:
+        # Worst case (competent but never recovers) = full post-window.
+        recovery_time = float(cfg.EXP3_POST_EPISODES)
+        consecutive = 0
+        for i, length in enumerate(post_lengths):
+            if length >= cfg.EXP3_RECOVERY_TARGET:
+                consecutive += 1
+                if consecutive >= 3:
+                    recovery_time = float(i - 2)
+                    break
+            else:
+                consecutive = 0
+    else:
+        recovery_time = float("nan")  # undefined — never competent pre-shock
 
     return {
         "episode_lengths": episode_lengths,
@@ -284,6 +325,8 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
         "tau": list(meta.history_tau),
         "gamma": list(meta.history_gamma),
         "recovery_time": recovery_time,
+        "pre_competence": pre_competence,
+        "is_competent": is_competent,
         "perturb_episode": cfg.EXP3_PERTURB_EPISODE,
         "label": label,
     }

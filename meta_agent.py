@@ -27,9 +27,16 @@ class HormonalMetaAgent:
 
     It translates the raw hormone levels into dynamic hyperparameters
     for the Local Worker (Section 4B):
-        α_t  = α_base × (1 + |DA_eff − rest|)      (Learning Rate)
-        τ_t  = τ_base × (1 / NA_concentration)   (Softmax Temperature)
-        γ_t  = γ_base × σ(5HT)                   (Discount Factor)
+        α_t  = α_base × (1 + |DA_eff − rest|)         (Learning Rate)
+        τ_t  = τ_base × clip(NA, 0.1, 10)             (Softmax Temperature)
+        γ_t  = γ_base + (γ_max − γ_base) × excess(5HT) (Discount Factor)
+
+    NOTE on τ: higher NA must yield MORE exploration, so τ scales
+    *proportionally* with NA (τ ∝ NA), not inversely. An earlier
+    spec draft wrote τ = τ_base/NA, which is the wrong direction and is
+    superseded here.  Every mapping reduces to the base value at rest
+    (all hormones = HORMONE_BASELINE), so the modulated agent with no
+    spikes is identical to the static baseline.
     """
 
     def __init__(self, enable_da: bool = True, enable_na: bool = True,
@@ -140,10 +147,20 @@ class HormonalMetaAgent:
 
     @staticmethod
     def _modulate_discount(ht: float) -> float:
-        """γ_t = γ_base × σ(5HT - baseline).
+        """γ_t = γ_base + (γ_max − γ_base) × excess(5HT).
 
-        High 5-HT → sigmoid > 0.5 → agent values long-term survival;
-        Low  5-HT → sigmoid < 0.5 → agent is more short-sighted.
+        excess(5HT) = clip(2·(σ(5HT − baseline) − 0.5), 0, 1) is 0 when
+        5-HT is at or below its resting baseline and climbs toward 1 as
+        5-HT rises.  Therefore:
+            • At rest (5-HT = baseline) → γ = γ_base  (== static baseline).
+            • A serotonin spike can only *lengthen* the horizon toward
+              γ_max, never shorten it — the agent values long-term
+              survival after aversive events.
+
+        This fixes the earlier `γ_base × σ(5HT−baseline)` form, which
+        collapsed γ to ≈0.5·γ_base at rest and crippled long-horizon
+        tasks (e.g. CartPole) relative to the fixed-γ baseline.
         """
         sigmoid = 1.0 / (1.0 + np.exp(-(ht - cfg.HORMONE_BASELINE)))
-        return cfg.GAMMA_BASE * float(sigmoid)
+        excess = float(np.clip(2.0 * (sigmoid - 0.5), 0.0, 1.0))
+        return cfg.GAMMA_BASE + (cfg.GAMMA_MAX - cfg.GAMMA_BASE) * excess

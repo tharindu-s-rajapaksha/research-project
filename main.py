@@ -16,9 +16,11 @@ import numpy as np
 import argparse
 
 import config as cfg
-from ablation import (run_ablation_study, plot_comparative_bars,
-                      print_scientific_conclusions)
-from evaluation import export_csv, compute_pvalues, plot_regret_curve
+from ablation import (run_multiseed_study, plot_comparative_bars_multiseed,
+                      print_scientific_conclusions_multiseed)
+from evaluation import (summarize_multiseed, compute_multiseed_pvalues,
+                        plot_experiment_1, plot_experiment_2,
+                        plot_experiment_3, plot_regret_curve)
 
 
 def main():
@@ -32,7 +34,7 @@ def main():
     print("  Research Experiment Suite")
     print("=" * 60)
     print(f"  Device:  {cfg.DEVICE}")
-    print(f"  Seed:    {cfg.SEED}")
+    print(f"  Seeds:   {cfg.SEEDS}")
     print(f"  Output:  {cfg.RESULTS_DIR}")
     if args.exp:
         print(f"  Target:  Experiment {args.exp}")
@@ -40,42 +42,48 @@ def main():
 
     os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
 
-    # Set global seeds
-    torch.manual_seed(cfg.SEED)
-    np.random.seed(cfg.SEED)
-
     start = time.time()
 
-    # ── Run ablation study (specific experiment or all) ──
-    all_results = run_ablation_study(seed=cfg.SEED, exp_id=args.exp)
+    # ── Run the multi-seed ablation study (statistical backbone) ──
+    print("\n> Running multi-seed study "
+          f"({len(cfg.SEEDS)} seeds × {len(cfg.ABLATION_CONFIGS)} configs)...")
+    all_ms = run_multiseed_study(seeds=cfg.SEEDS, exp_id=args.exp)
 
-    # ── Comparative bar charts ──
+    # ── Dashboards from the first seed (representative visuals) ──
+    print("\n> Generating per-config dashboards (seed = %d)..." % cfg.SEEDS[0])
+    _plotters = {"Experiment_1": plot_experiment_1,
+                 "Experiment_2": plot_experiment_2,
+                 "Experiment_3": plot_experiment_3}
+    for exp_key, configs in all_ms.items():
+        for label, res_list in configs.items():
+            if not res_list:
+                continue
+            sfx = f"_{label.replace(' ', '_').lower()}"
+            _plotters[exp_key](res_list[0], suffix=sfx)
+
+    # ── Comparative bar charts (mean ± 95% CI across seeds) ──
     print("\n> Generating comparative bar charts...")
-    plot_comparative_bars(all_results, merge=args.merge)
+    plot_comparative_bars_multiseed(all_ms, merge=args.merge)
 
-    # ── Regret curves for Full Model ──
+    # ── Regret curves for Full Model (first seed) ──
     print("\n> Generating regret curves...")
-    if "Experiment_1" in all_results and "Full Model" in all_results["Experiment_1"]:
-        plot_regret_curve(
-            all_results["Experiment_1"]["Full Model"],
-            optimal_reward=cfg.EXP1_REWARD_MU_HI,
-            exp_name="Experiment_1")
-    if "Experiment_2" in all_results and "Full Model" in all_results["Experiment_2"]:
-        plot_regret_curve(
-            all_results["Experiment_2"]["Full Model"],
-            optimal_reward=cfg.EXP2_SAFE_REWARD,  # Safe optimal
-            exp_name="Experiment_2")
+    if all_ms.get("Experiment_1", {}).get("Full Model"):
+        plot_regret_curve(all_ms["Experiment_1"]["Full Model"][0],
+                          optimal_reward=cfg.EXP1_REWARD_MU_HI,
+                          exp_name="Experiment_1")
+    if all_ms.get("Experiment_2", {}).get("Full Model"):
+        plot_regret_curve(all_ms["Experiment_2"]["Full Model"][0],
+                          optimal_reward=cfg.EXP2_SAFE_REWARD,  # safe optimal
+                          exp_name="Experiment_2")
 
-    # ── CSV export ──
-    print("\n> Exporting CSV results...")
-    export_csv(all_results)
-
-    # ── P-values ──
-    print("\n> Computing p-values (Welch's t-test)...")
-    compute_pvalues(all_results)
+    # ── Statistics: mean ± CI summary + paired significance tests ──
+    print("\n> Summarizing metrics across seeds...")
+    summarize_multiseed(all_ms)
+    print("\n> Computing paired significance tests (Full vs each config)...")
+    compute_multiseed_pvalues(all_ms)
 
     # ── Scientific conclusions ──
-    print_scientific_conclusions(all_results)
+    print_scientific_conclusions_multiseed(all_ms)
 
     elapsed = time.time() - start
     print(f"\n{'='*60}")

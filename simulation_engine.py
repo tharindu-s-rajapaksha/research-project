@@ -18,7 +18,8 @@ from worker import LocalRLWorker, StaticBaselineWorker
 from environments import VolatileBandit, HighStakesForaging
 import experiments
 import evaluation
-from ablation import run_ablation_study, plot_comparative_bars, print_scientific_conclusions
+from ablation import (run_multiseed_study, plot_comparative_bars_multiseed,
+                      print_scientific_conclusions_multiseed)
 
 # ---------------------------------------------------------
 # Colors
@@ -416,7 +417,7 @@ class SimulationEngine:
             
         if self.episode_i == cfg.EXP3_PERTURB_EPISODE and not self.perturbed:
             self.env.unwrapped.gravity = cfg.EXP3_NEW_GRAVITY
-            self.env.unwrapped.force_mag *= cfg.EXP3_NEW_FRICTION
+            self.env.unwrapped.force_mag *= cfg.EXP3_FORCE_SCALE
             self.perturbed = True
             
         hormone_signal = self.meta.engine.get_vector()[0]
@@ -438,7 +439,7 @@ class SimulationEngine:
         
         if done or self.step_i >= 500:
             self.last_ep_score = self.ep_reward
-            if self.ep_reward > 200: # Success threshold for LunarLander
+            if self.ep_reward >= cfg.EXP3_RECOVERY_TARGET:  # CartPole success bar
                 self.success_count += 1
                 
             self.plot_rewards.add_data([self.ep_reward])
@@ -700,24 +701,30 @@ def run_full_ablation_mode(exp_id: int):
     print("=" * 60)
     print(f" Running FULL ABLATION STUDY for Experiment {exp_id}")
     print("=" * 60)
-    print(" This will run all 4 configurations (Full, Ablated NA, Ablated 5-HT, Static).")
-    
+    print(f" Configs: {list(cfg.ABLATION_CONFIGS.keys())}")
+    print(f" Seeds:   {cfg.SEEDS}")
+
     start_time = time.time()
-    
-    # Run ablation study for the specific experiment
-    all_results = run_ablation_study(seed=cfg.SEED, exp_id=exp_id)
-    
-    # Generate comparative plots
-    print("\n> Generating comparative bar charts...")
-    plot_comparative_bars(all_results)
-    
-    # Export results
-    print("\n> Exporting CSV results...")
-    evaluation.export_csv(all_results)
-    
-    # Print conclusions
-    print_scientific_conclusions(all_results)
-    
+
+    # Run the multi-seed study for the specific experiment
+    all_ms = run_multiseed_study(seeds=cfg.SEEDS, exp_id=exp_id)
+
+    # Dashboards from the first seed (representative visual)
+    plotters = {1: evaluation.plot_experiment_1, 2: evaluation.plot_experiment_2,
+                3: evaluation.plot_experiment_3}
+    for label, res_list in all_ms[f"Experiment_{exp_id}"].items():
+        if res_list:
+            sfx = f"_{label.replace(' ', '_').lower()}"
+            plotters[exp_id](res_list[0], suffix=sfx)
+
+    # Comparative plots + statistics
+    print("\n> Generating comparative bar charts (mean ± 95% CI)...")
+    plot_comparative_bars_multiseed(all_ms)
+    print("\n> Summarizing metrics + significance tests...")
+    evaluation.summarize_multiseed(all_ms)
+    evaluation.compute_multiseed_pvalues(all_ms)
+    print_scientific_conclusions_multiseed(all_ms)
+
     print(f"Full ablation study completed in {time.time() - start_time:.2f} seconds.")
     print(f"All dashboards and comparison plots saved to: {cfg.RESULTS_DIR}")
 

@@ -47,7 +47,6 @@ class HormoneEngine:
         # Change detection — moving window of rewards & prediction errors
         self._error_history = deque(maxlen=cfg.VOLATILITY_WINDOW)
         self._reward_history = deque(maxlen=cfg.VOLATILITY_WINDOW)
-        self._prev_volatility = 0.0
 
         # Logging buffers (for visualization)
         self.history_da  = []
@@ -101,7 +100,6 @@ class HormoneEngine:
         self.ht = cfg.HORMONE_BASELINE
         self._error_history.clear()
         self._reward_history.clear()
-        self._prev_volatility = 0.0
 
     def get_vector(self) -> np.ndarray:
         """Return current hormonal vector [DA_eff, NA, 5HT]."""

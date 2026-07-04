@@ -143,8 +143,11 @@ class LocalRLWorker:
         q_values = self.policy_net(states, hormone_signal).gather(1, actions)
 
         # Target: r + γ max_a' Q_target(s', a')
+        # The target net is a frozen snapshot — do NOT advance its Hebbian
+        # trace, or the bootstrap target would drift every update.
         with torch.no_grad():
-            next_q = self.target_net(next_states, hormone_signal).max(1)[0]
+            next_q = self.target_net(next_states, hormone_signal,
+                                     update_trace=False).max(1)[0]
             target = rewards + self.gamma * next_q * (1.0 - dones)
 
         td_error = (target.unsqueeze(1) - q_values).mean().item()

@@ -241,33 +241,120 @@ def export_csv(all_results: dict, filename: str = "experiment_results.csv"):
     return df
 
 
-def compute_pvalues(all_results: dict):
-    """Welch's t-test between Full Model and each ablation."""
+# ─────────────────────────────────────────────────────────────────────
+# Multi-seed statistics
+# ─────────────────────────────────────────────────────────────────────
+# Metric directionality: is a LOWER value the BETTER agent?
+_LOWER_IS_BETTER = {"Adaptation_Latency", "Death_Count", "Recovery_Time"}
+
+
+def scalar_metrics(res: dict) -> dict:
+    """Reduce one experiment run to its headline scalar metrics."""
+    m = {"Total_Reward": float(np.sum(res.get("rewards", []) or [0.0]))}
+    if "adaptation_latency" in res:
+        m["Adaptation_Latency"] = float(res["adaptation_latency"])
+    if "death_count" in res:
+        m["Death_Count"] = float(res["death_count"])
+        m["Survival_Rate"] = float(np.mean(res.get("survival_steps", [0])))
+    if "recovery_time" in res:
+        m["Recovery_Time"] = float(res["recovery_time"])  # may be NaN
+    return m
+
+
+def _metric_vectors(res_list: list) -> dict:
+    """Stack per-seed scalar metrics into {metric: [v_seed0, v_seed1, ...]}."""
+    vecs = {}
+    for res in res_list:
+        for k, v in scalar_metrics(res).items():
+            vecs.setdefault(k, []).append(v)
+    return vecs
+
+
+def _mean_ci(vec):
+    """Mean and 95% (t-based) CI half-width, ignoring NaNs."""
+    a = np.array([v for v in vec if not np.isnan(v)], dtype=float)
+    n = len(a)
+    if n == 0:
+        return float("nan"), float("nan"), 0
+    mean = float(a.mean())
+    if n == 1:
+        return mean, float("nan"), 1
+    sem = float(a.std(ddof=1) / np.sqrt(n))
+    ci = float(stats.t.ppf(0.975, n - 1) * sem)
+    return mean, ci, n
+
+
+def summarize_multiseed(multiseed_results: dict,
+                        filename: str = "summary_multiseed.csv"):
+    """Per-(experiment, config, metric) mean ± 95% CI across seeds."""
     _ensure_dir()
     rows = []
-    for exp_name, configs in all_results.items():
-        if "Full Model" not in configs:
-            continue
-        full = np.array(configs["Full Model"]["rewards"])
-        for cfg_label, res in configs.items():
-            if cfg_label == "Full Model":
-                continue
-            abl = np.array(res["rewards"])
-            w = 50
-            n = min(len(full), len(abl))
-            fc = [full[i:i+w].mean() for i in range(0, n-w, w)]
-            ac = [abl[i:i+w].mean() for i in range(0, n-w, w)]
-            if len(fc) > 1 and len(ac) > 1:
-                t, p = stats.ttest_ind(fc, ac, equal_var=False)
-            else:
-                t, p = 0.0, 1.0
-            rows.append({"Experiment": exp_name,
-                         "Comparison": f"Full vs {cfg_label}",
-                         "t_stat": round(t, 4), "p_value": round(p, 6),
-                         "sig_0.05": p < 0.05})
+    for exp_name, configs in multiseed_results.items():
+        for cfg_label, res_list in configs.items():
+            for metric, vec in _metric_vectors(res_list).items():
+                mean, ci, n = _mean_ci(vec)
+                rows.append({"Experiment": exp_name, "Configuration": cfg_label,
+                             "Metric": metric, "Mean": round(mean, 4),
+                             "CI95": (round(ci, 4) if not np.isnan(ci)
+                                      else float("nan")),
+                             "N_seeds": n})
     df = pd.DataFrame(rows)
-    fpath = os.path.join(cfg.RESULTS_DIR, "pvalues.csv")
+    fpath = os.path.join(cfg.RESULTS_DIR, filename)
     df.to_csv(fpath, index=False)
     print(f"  [Saved] {fpath}")
-    print(df.to_string(index=False))
+    return df
+
+
+def compute_multiseed_pvalues(multiseed_results: dict,
+                              filename: str = "pvalues.csv"):
+    """Paired significance tests: Full Model vs each other config, per metric.
+
+    Seeds are matched across configs, so we use a paired t-test on the
+    per-seed metric vectors (dropping any seed where either side is NaN,
+    e.g. an undefined CartPole recovery). This replaces the earlier
+    single-seed window-chunking test, which was pseudoreplication.
+    """
+    _ensure_dir()
+    rows = []
+    for exp_name, configs in multiseed_results.items():
+        if "Full Model" not in configs:
+            continue
+        full_vecs = _metric_vectors(configs["Full Model"])
+        for cfg_label, res_list in configs.items():
+            if cfg_label == "Full Model":
+                continue
+            other_vecs = _metric_vectors(res_list)
+            for metric, full_vec in full_vecs.items():
+                other_vec = other_vecs.get(metric)
+                if other_vec is None:
+                    continue
+                pairs = [(f, o) for f, o in zip(full_vec, other_vec)
+                         if not (np.isnan(f) or np.isnan(o))]
+                if len(pairs) < 2:
+                    continue
+                f_arr = np.array([p[0] for p in pairs])
+                o_arr = np.array([p[1] for p in pairs])
+                if np.allclose(f_arr, o_arr):
+                    t, p = 0.0, 1.0
+                else:
+                    t, p = stats.ttest_rel(f_arr, o_arr)
+                mean_diff = float(f_arr.mean() - o_arr.mean())
+                lower_better = metric in _LOWER_IS_BETTER
+                full_better = (mean_diff < 0) if lower_better else (mean_diff > 0)
+                rows.append({"Experiment": exp_name,
+                             "Comparison": f"Full vs {cfg_label}",
+                             "Metric": metric,
+                             "Full_Mean": round(float(f_arr.mean()), 3),
+                             "Other_Mean": round(float(o_arr.mean()), 3),
+                             "t_stat": round(float(t), 4),
+                             "p_value": round(float(p), 6),
+                             "sig_0.05": bool(p < 0.05),
+                             "Full_Better": bool(full_better),
+                             "N_pairs": len(pairs)})
+    df = pd.DataFrame(rows)
+    fpath = os.path.join(cfg.RESULTS_DIR, filename)
+    df.to_csv(fpath, index=False)
+    print(f"  [Saved] {fpath}")
+    if not df.empty:
+        print(df.to_string(index=False))
     return df

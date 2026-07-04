@@ -11,6 +11,8 @@ Key equations (Section 4):
     ΔW = (Pre × Post × M) + η_static × δ_TD
 """
 
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -37,10 +39,17 @@ class NeuromodulatedLinear(nn.Module):
         self.eta_decay = eta_decay
         self.eta_trace = eta_trace
 
-        # Baseline (slow) weights — updated by backpropagation
+        # Baseline (slow) weights — updated by backpropagation.
+        # Use the EXACT nn.Linear default init so that, when plasticity is
+        # gated off (hormone_signal = 0), this layer is distributionally
+        # identical to a standard Linear layer — otherwise the "same
+        # architecture" static baseline would train differently by accident.
         self.weight = nn.Parameter(torch.empty(out_features, in_features))
-        self.bias = nn.Parameter(torch.zeros(out_features))
-        nn.init.kaiming_uniform_(self.weight)
+        self.bias = nn.Parameter(torch.empty(out_features))
+        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
+        bound = 1.0 / math.sqrt(fan_in) if fan_in > 0 else 0.0
+        nn.init.uniform_(self.bias, -bound, bound)
 
         # Hebbian eligibility trace — *not* a parameter (no gradient)
         self.register_buffer("hebb_trace", torch.zeros(out_features, in_features))

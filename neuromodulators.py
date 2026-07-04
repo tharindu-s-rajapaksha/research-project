@@ -106,6 +106,23 @@ class HormoneEngine:
         da_eff = self._opponent_process(self.da, self.ht)
         return np.array([da_eff, self.na, self.ht], dtype=np.float32)
 
+    def plastic_gate(self) -> float:
+        """Dopamine-gated plasticity factor in [0, 1].
+
+        This is the neuromodulatory "third factor" that gates the Hebbian
+        fast-weights.  It is 0 when DA sits at its resting level — so the
+        plastic layers contribute nothing and the network behaves as a
+        stable standard DQN — and rises toward 1 as DA_eff deviates from
+        rest in EITHER direction (reward surprise or a performance
+        collapse), engaging the fast weights for rapid intra-lifetime
+        adaptation.  Applying plasticity at full strength even at rest
+        (the earlier behaviour) destabilised stable-control tasks such as
+        CartPole.
+        """
+        da_eff = self._opponent_process(self.da, self.ht)
+        da_eff_rest = cfg.HORMONE_BASELINE * 0.5
+        return float(np.clip(2.0 * abs(da_eff - da_eff_rest), 0.0, 1.0))
+
     # ──────────────────────────────────────────────────────────────────
     # Private helpers
     # ──────────────────────────────────────────────────────────────────

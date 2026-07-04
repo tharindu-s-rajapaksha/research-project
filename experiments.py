@@ -25,7 +25,7 @@ def _make_agent(state_dim: int, action_dim: int, ablation_cfg: dict):
     All configurations use the SAME plastic ``LocalRLWorker`` so the only
     variable across configs is which hormone is enabled — the "Static
     Baseline" is simply this worker with every hormone clamped to baseline
-    (α/τ/γ held at their base values).  The single exception is the
+    (α/ε/γ held at their base values).  The single exception is the
     ``"vanilla": True`` reference config, which swaps in the plain-MLP
     ε-greedy ``StaticBaselineWorker`` as an external sanity anchor.
     """
@@ -67,7 +67,7 @@ def run_experiment_1(ablation_cfg: dict = None, seed: int = cfg.SEED,
     rewards, actions, optimal_arms = [], [], []
 
     for step_i in range(cfg.EXP1_TOTAL_STEPS):
-        hormone_signal = meta.engine.get_vector()[0]  # DA_eff
+        hormone_signal = meta.engine.plastic_gate()  # DA-gated plasticity
         action = worker.select_action(state, hormone_signal=hormone_signal)
         next_state, reward, done, _, info = env.step(action)
 
@@ -77,8 +77,8 @@ def run_experiment_1(ablation_cfg: dict = None, seed: int = cfg.SEED,
 
         # Meta-Agent step → modulate worker
         modulation = meta.step(td_error, reward, done)
-        worker.set_modulation(modulation["alpha"], modulation["tau"],
-                              modulation["gamma"])
+        worker.set_modulation(modulation["alpha"], modulation["epsilon"],
+                              modulation["gamma"], modulation["punish_gain"])
 
         rewards.append(reward)
         actions.append(action)
@@ -126,7 +126,7 @@ def run_experiment_1(ablation_cfg: dict = None, seed: int = cfg.SEED,
         "hormones_ht": list(meta.engine.history_ht),
         "hormones_da_eff": list(meta.engine.history_da_eff),
         "alpha": list(meta.history_alpha),
-        "tau": list(meta.history_tau),
+        "epsilon": list(meta.history_epsilon),
         "gamma": list(meta.history_gamma),
         "adaptation_latency": adaptation_latency,
         "per_switch_latency": per_switch_latency,
@@ -162,7 +162,7 @@ def run_experiment_2(ablation_cfg: dict = None, seed: int = cfg.SEED,
     survival_steps = []
 
     for step_i in range(cfg.EXP2_TOTAL_STEPS):
-        hormone_signal = meta.engine.get_vector()[0]
+        hormone_signal = meta.engine.plastic_gate()  # DA-gated plasticity
         action = worker.select_action(state, hormone_signal=hormone_signal)
         next_state, reward, done, _, info = env.step(action)
 
@@ -171,8 +171,8 @@ def run_experiment_2(ablation_cfg: dict = None, seed: int = cfg.SEED,
         td_error = worker.update(hormone_signal=hormone_signal)
 
         modulation = meta.step(td_error, reward, info.get("death", False))
-        worker.set_modulation(modulation["alpha"], modulation["tau"],
-                              modulation["gamma"])
+        worker.set_modulation(modulation["alpha"], modulation["epsilon"],
+                              modulation["gamma"], modulation["punish_gain"])
 
         rewards.append(reward)
         actions.append(action)
@@ -202,7 +202,7 @@ def run_experiment_2(ablation_cfg: dict = None, seed: int = cfg.SEED,
         "hormones_ht": list(meta.engine.history_ht),
         "hormones_da_eff": list(meta.engine.history_da_eff),
         "alpha": list(meta.history_alpha),
-        "tau": list(meta.history_tau),
+        "epsilon": list(meta.history_epsilon),
         "gamma": list(meta.history_gamma),
         "death_count": len(deaths),
         "total_reward": sum(rewards),
@@ -263,7 +263,7 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
         step_count = 0
 
         for t in range(500):  # CartPole max steps
-            hormone_signal = meta.engine.get_vector()[0]
+            hormone_signal = meta.engine.plastic_gate()  # DA-gated plasticity
             action = worker.select_action(state,
                                           hormone_signal=hormone_signal)
             next_state, reward, terminated, truncated, _ = env.step(action)
@@ -274,8 +274,8 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
             td_error = worker.update(hormone_signal=hormone_signal)
 
             modulation = meta.step(td_error, reward, done)
-            worker.set_modulation(modulation["alpha"], modulation["tau"],
-                                  modulation["gamma"])
+            worker.set_modulation(modulation["alpha"], modulation["epsilon"],
+                                  modulation["gamma"], modulation["punish_gain"])
 
             ep_reward += reward
             step_count += 1
@@ -322,7 +322,7 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
         "hormones_ht": list(meta.engine.history_ht),
         "hormones_da_eff": list(meta.engine.history_da_eff),
         "alpha": list(meta.history_alpha),
-        "tau": list(meta.history_tau),
+        "epsilon": list(meta.history_epsilon),
         "gamma": list(meta.history_gamma),
         "recovery_time": recovery_time,
         "pre_competence": pre_competence,

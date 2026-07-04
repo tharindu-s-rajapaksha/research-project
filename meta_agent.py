@@ -27,16 +27,17 @@ class HormonalMetaAgent:
 
     It translates the raw hormone levels into dynamic hyperparameters
     for the Local Worker (Section 4B):
-        α_t  = α_base × (1 + |DA_eff − rest|)         (Learning Rate)
-        τ_t  = τ_base × clip(NA, 0.1, 10)             (Softmax Temperature)
-        γ_t  = γ_base + (γ_max − γ_base) × excess(5HT) (Discount Factor)
+        α_t   = α_base × (1 + |DA_eff − rest|)              (Learning Rate)
+        ε_t   = ε_base + (ε_max − ε_base) × excess(NA)      (Exploration Rate)
+        γ_t   = γ_base + (γ_max − γ_base) × excess(5HT)     (Discount Factor)
+        g_t   = 1 + (punish_gain − 1) × excess(5HT)         (Loss Aversion)
 
-    NOTE on τ: higher NA must yield MORE exploration, so τ scales
-    *proportionally* with NA (τ ∝ NA), not inversely. An earlier
-    spec draft wrote τ = τ_base/NA, which is the wrong direction and is
-    superseded here.  Every mapping reduces to the base value at rest
-    (all hormones = HORMONE_BASELINE), so the modulated agent with no
-    spikes is identical to the static baseline.
+    NOTE on exploration: noradrenaline is routed through the ε-greedy rate
+    ε (higher NA → more exploration), NOT a softmax temperature.  Boltzmann
+    temperature is scale-sensitive and was uncompetitive on near-equal-Q
+    tasks (CartPole); ε is scale-invariant.  Every mapping reduces to its
+    base value at rest (all hormones = HORMONE_BASELINE), so the modulated
+    agent with no spikes is identical to the static baseline.
     """
 
     def __init__(self, enable_da: bool = True, enable_na: bool = True,
@@ -50,7 +51,7 @@ class HormonalMetaAgent:
 
         # Logging buffers for hyperparameter dynamics
         self.history_alpha = []
-        self.history_tau = []
+        self.history_epsilon = []
         self.history_gamma = []
 
     # ──────────────────────────────────────────────────────────────────
@@ -67,7 +68,7 @@ class HormonalMetaAgent:
 
         Returns:
             dict with modulated hyperparameters:
-                'alpha', 'tau', 'gamma', and raw hormone levels.
+                'alpha', 'epsilon', 'gamma', 'punish_gain', and hormone levels.
         """
         self._total_steps += 1
         self._recent_rewards.append(reward)
@@ -79,19 +80,21 @@ class HormonalMetaAgent:
         hormones = self.engine.step(td_error, reward, done)
 
         # Compute modulated hyperparameters  (Section 4B)
-        alpha = self._modulate_lr(hormones["DA_eff"])
-        tau   = self._modulate_temperature(hormones["NA"])
-        gamma = self._modulate_discount(hormones["5HT"])
+        alpha   = self._modulate_lr(hormones["DA_eff"])
+        epsilon = self._modulate_epsilon(hormones["NA"])
+        gamma   = self._modulate_discount(hormones["5HT"])
+        punish  = self._punishment_gain(hormones["5HT"])
 
         # Log
         self.history_alpha.append(alpha)
-        self.history_tau.append(tau)
+        self.history_epsilon.append(epsilon)
         self.history_gamma.append(gamma)
 
         return {
-            "alpha" : alpha,
-            "tau"   : tau,
-            "gamma" : gamma,
+            "alpha"       : alpha,
+            "epsilon"     : epsilon,
+            "gamma"       : gamma,
+            "punish_gain" : punish,
             **hormones,
         }
 
@@ -109,7 +112,7 @@ class HormonalMetaAgent:
         self._death_count = 0
         self._total_steps = 0
         self.history_alpha.clear()
-        self.history_tau.clear()
+        self.history_epsilon.clear()
         self.history_gamma.clear()
         self.engine.history_da.clear()
         self.engine.history_na.clear()
@@ -124,43 +127,66 @@ class HormonalMetaAgent:
     # Hyperparameter modulation  (Section 4B)
     # ──────────────────────────────────────────────────────────────────
     @staticmethod
+    def _excess(conc: float) -> float:
+        """How far a hormone sits ABOVE its resting baseline, in [0, 1].
+
+        excess = clip(2·(σ(conc − baseline) − 0.5), 0, 1) → 0 at/below
+        baseline, → 1 as the concentration saturates.  Shared by every
+        modulation so each one reduces to its base value at rest.
+        """
+        sigmoid = 1.0 / (1.0 + np.exp(-(conc - cfg.HORMONE_BASELINE)))
+        return float(np.clip(2.0 * (sigmoid - 0.5), 0.0, 1.0))
+
+    @staticmethod
     def _modulate_lr(da_eff: float) -> float:
-        """α_t = α_base × (1 + |DA_eff − DA_eff_rest|).
+        """α_t = α_base × (1 + |DA_eff − DA_eff_rest|), capped at α_max.
 
         Learning rate scales with the MAGNITUDE of surprise, not direction.
-        Both positive surprise (DA_eff >> rest) and negative surprise
-        (DA_eff << rest) drive faster learning.  At rest, α = α_base.
+        At rest α = α_base.  The ceiling is tightened to ALPHA_MAX_SCALE
+        (was 5×) because large DA-driven α spikes destabilised value
+        learning on CartPole, where the modulated agent underperformed the
+        frozen baseline.
         """
         # DA_eff at rest: DA=1.0, 5HT=1.0 → DA_eff = 1.0 × (1 - σ(0)) = 0.5
         da_eff_rest = cfg.HORMONE_BASELINE * 0.5
         surprise = 1.0 + abs(da_eff - da_eff_rest)
-        return cfg.ALPHA_BASE * float(np.clip(surprise, 0.5, 5.0))
+        return cfg.ALPHA_BASE * float(np.clip(surprise, 1.0,
+                                              cfg.ALPHA_MAX_SCALE))
 
-    @staticmethod
-    def _modulate_temperature(na: float) -> float:
-        """τ_t = τ_base × clip(NA, 0.1, 10.0).
+    @classmethod
+    def _modulate_epsilon(cls, na: float) -> float:
+        """ε_t = ε_base + (ε_max − ε_base) × excess(NA).
 
-        High NA (uncertainty) → high temperature → more random exploration.
-        (Higher temperature in softmax → more uniform distribution.)
+        Noradrenaline routes through the ε-greedy exploration RATE (not a
+        softmax temperature).  At rest (NA = baseline) ε = ε_base, matching
+        the vanilla-DQN baseline; a volatility-driven NA spike raises ε
+        toward ε_max → more exploration exactly when the world changes.
+        ε is scale-invariant, so this works even where Q-gaps are tiny
+        (CartPole), unlike Boltzmann temperature.
         """
-        return cfg.TAU_BASE * float(np.clip(na, 0.1, 10.0))
+        return cfg.EPSILON_BASE + (cfg.EPSILON_MAX - cfg.EPSILON_BASE) * cls._excess(na)
 
-    @staticmethod
-    def _modulate_discount(ht: float) -> float:
+    @classmethod
+    def _modulate_discount(cls, ht: float) -> float:
         """γ_t = γ_base + (γ_max − γ_base) × excess(5HT).
 
-        excess(5HT) = clip(2·(σ(5HT − baseline) − 0.5), 0, 1) is 0 when
-        5-HT is at or below its resting baseline and climbs toward 1 as
-        5-HT rises.  Therefore:
-            • At rest (5-HT = baseline) → γ = γ_base  (== static baseline).
-            • A serotonin spike can only *lengthen* the horizon toward
-              γ_max, never shorten it — the agent values long-term
-              survival after aversive events.
-
-        This fixes the earlier `γ_base × σ(5HT−baseline)` form, which
-        collapsed γ to ≈0.5·γ_base at rest and crippled long-horizon
-        tasks (e.g. CartPole) relative to the fixed-γ baseline.
+        At rest (5-HT = baseline) γ = γ_base (== static baseline); a
+        serotonin spike can only *lengthen* the horizon toward γ_max, never
+        shorten it.  Fixes the earlier `γ_base × σ(5HT−baseline)` form,
+        which collapsed γ to ≈0.5·γ_base at rest and crippled long-horizon
+        tasks (e.g. CartPole).
         """
-        sigmoid = 1.0 / (1.0 + np.exp(-(ht - cfg.HORMONE_BASELINE)))
-        excess = float(np.clip(2.0 * (sigmoid - 0.5), 0.0, 1.0))
-        return cfg.GAMMA_BASE + (cfg.GAMMA_MAX - cfg.GAMMA_BASE) * excess
+        return cfg.GAMMA_BASE + (cfg.GAMMA_MAX - cfg.GAMMA_BASE) * cls._excess(ht)
+
+    @classmethod
+    def _punishment_gain(cls, ht: float) -> float:
+        """Loss-aversion gain g_t = 1 + (HT_PUNISHMENT_GAIN − 1) × excess(5HT).
+
+        Serotonin's harm-aversion pathway.  Elevated 5-HT amplifies the
+        magnitude of NEGATIVE rewards in the value target (losses loom
+        larger), which lowers the learned value of harmful/high-variance
+        actions and biases the policy toward safety — the serotonin-as
+        -punishment-sensitivity account (Daw 2002; Cools 2011).  At rest
+        g = 1 (no distortion), so the static baseline is unaffected.
+        """
+        return 1.0 + (cfg.HT_PUNISHMENT_GAIN - 1.0) * cls._excess(ht)

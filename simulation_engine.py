@@ -185,7 +185,7 @@ class SimulationEngine:
         # Row 2: Individual Hyperparameter Charts
         y2 = y1 + row_h
         self.plot_alpha = ScrollingPlot(margin, y2, chart_w, chart_h, "Alpha (Learning Rate)", ["Alpha"], [C_ALPHA], y_range=(0, 0.005))
-        self.plot_tau = ScrollingPlot(2*margin + chart_w, y2, chart_w, chart_h, "Tau (Softmax Temp)", ["Tau"], [C_TAU], y_range=(0, 1))
+        self.plot_tau = ScrollingPlot(2*margin + chart_w, y2, chart_w, chart_h, "Epsilon (Explore Rate)", ["Epsilon"], [C_TAU], y_range=(0, 1))
         self.plot_gamma = ScrollingPlot(3*margin + 2*chart_w, y2, chart_w, chart_h, "Gamma (Discount)", ["Gamma"], [C_GAMMA], y_range=(0, 1))
         
         # Row 3: Instantaneous Reward (Full Width)
@@ -335,7 +335,7 @@ class SimulationEngine:
         self.plot_5ht.add_data([modulation["5HT"]])
         
         self.plot_alpha.add_data([modulation["alpha"]])
-        self.plot_tau.add_data([modulation["tau"]])
+        self.plot_tau.add_data([modulation["epsilon"]])
         self.plot_gamma.add_data([modulation["gamma"]])
         
         if self.exp_id in [1, 2]:
@@ -348,14 +348,14 @@ class SimulationEngine:
         if self.step_i >= self.total_steps:
             return True
             
-        hormone_signal = self.meta.engine.get_vector()[0]
+        hormone_signal = self.meta.engine.plastic_gate()
         self.action = self.worker.select_action(self.state, hormone_signal=hormone_signal)
         next_state, self.reward, done, _, info = self.env.step(self.action)
         
         self.worker.store_transition(self.state, self.action, self.reward, next_state, float(done))
         td_error = self.worker.update(hormone_signal=hormone_signal)
         modulation = self.meta.step(td_error, self.reward, done)
-        self.worker.set_modulation(modulation["alpha"], modulation["tau"], modulation["gamma"])
+        self.worker.set_modulation(modulation["alpha"], modulation["epsilon"], modulation["gamma"], modulation["punish_gain"])
         
         # Update metrics
         self.cum_reward += self.reward
@@ -385,7 +385,7 @@ class SimulationEngine:
         if self.step_i >= self.total_steps:
             return True
             
-        hormone_signal = self.meta.engine.get_vector()[0]
+        hormone_signal = self.meta.engine.plastic_gate()
         self.action = self.worker.select_action(self.state, hormone_signal=hormone_signal)
         next_state, self.reward, done, _, info = self.env.step(self.action)
         self.died = info.get("death", False)
@@ -393,7 +393,7 @@ class SimulationEngine:
         self.worker.store_transition(self.state, self.action, self.reward, next_state, float(self.died))
         td_error = self.worker.update(hormone_signal=hormone_signal)
         modulation = self.meta.step(td_error, self.reward, self.died)
-        self.worker.set_modulation(modulation["alpha"], modulation["tau"], modulation["gamma"])
+        self.worker.set_modulation(modulation["alpha"], modulation["epsilon"], modulation["gamma"], modulation["punish_gain"])
         
         # Update metrics
         self.cum_reward += self.reward
@@ -420,7 +420,7 @@ class SimulationEngine:
             self.env.unwrapped.force_mag *= cfg.EXP3_FORCE_SCALE
             self.perturbed = True
             
-        hormone_signal = self.meta.engine.get_vector()[0]
+        hormone_signal = self.meta.engine.plastic_gate()
         action = self.worker.select_action(self.state, hormone_signal=hormone_signal)
         next_state, reward, terminated, truncated, _ = self.env.step(action)
         done = terminated or truncated
@@ -428,7 +428,7 @@ class SimulationEngine:
         self.worker.store_transition(self.state, action, reward, next_state, float(done))
         td_error = self.worker.update(hormone_signal=hormone_signal)
         modulation = self.meta.step(td_error, reward, done)
-        self.worker.set_modulation(modulation["alpha"], modulation["tau"], modulation["gamma"])
+        self.worker.set_modulation(modulation["alpha"], modulation["epsilon"], modulation["gamma"], modulation["punish_gain"])
         
         self.ep_reward += reward
         self.cum_reward += reward

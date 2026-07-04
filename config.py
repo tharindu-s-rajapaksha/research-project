@@ -14,9 +14,9 @@ import torch
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu") # CPU or GPU
 SEED = 42
 # Seeds for the statistical study. Every config is run on EVERY seed, so the
-# per-seed metric vectors are paired by seed. ≥10 recommended for the final
-# report; trim for quick iteration (heavy: len(SEEDS)×n_configs×3 experiments).
-SEEDS = [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
+# per-seed metric vectors are paired by seed. 5 keeps a full run to ~1h; bump
+# toward 10+ for the final report (heavy: len(SEEDS)×n_configs×3 experiments).
+SEEDS = [42, 43, 44, 45, 46]
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research_results")
 
 # ─────────────────────────────────────────────────────────────────────
@@ -53,9 +53,27 @@ ETA_TRACE = 0.01                # η_trace  — trace accumulation rate
 # Worker DQN  (Section 2B + 4B)
 # ─────────────────────────────────────────────────────────────────────
 ALPHA_BASE   = 1e-3             # α_base (DA)  — base learning rate
-TAU_BASE     = 1.0              # τ_base (NA)  — base softmax exploration temperature
+ALPHA_MAX_SCALE = 2.0           # α ceiling = α_base × this (DA surprise boost, capped)
 GAMMA_BASE   = 0.99             # γ_base (5HT) — base discount factor (agent AT REST)
 GAMMA_MAX    = 0.999            # γ ceiling — horizon when 5-HT is saturated (survival mode)
+
+# Exploration is ε-greedy (scale-invariant), with NA modulating the rate ε.
+# Boltzmann/softmax temperature proved uncompetitive on near-equal-Q tasks
+# (e.g. CartPole), so NA is routed through ε instead of τ.
+EPSILON_BASE = 0.1              # ε at rest (matches the vanilla-DQN baseline)
+EPSILON_MAX  = 0.9              # ε when NA is saturated (volatility → explore)
+
+# Serotonin harm-aversion pathway (two mechanisms, both gated by 5-HT):
+#  1. Punishment-sensitive learning: up-weight the loss from negative-reward
+#     transitions so harmful actions lose value faster.
+#  2. Behavioural inhibition: at action selection, subtract a penalty from
+#     actions with a learned "harm history", so 5-HT actively WITHHOLDS
+#     risky actions (Cools 2011; Crockett 2009) — this breaks the
+#     exploration trap where the agent stays hooked on a high-EV lethal
+#     action and never samples the safe one.
+HT_PUNISHMENT_GAIN     = 4.0    # max loss up-weight on losses when 5-HT saturates
+RISK_INHIBITION_WEIGHT = 1.0    # scales the 5-HT behavioural-inhibition penalty
+HARM_EMA_DECAY         = 0.99   # EMA decay for per-action harm estimate
 
 HIDDEN_DIM   = 128              # Hidden layer width
 REPLAY_SIZE  = 500              # Experience-replay buffer capacity (CHANGED FROM 10000 to 500)
@@ -101,7 +119,7 @@ EXP3_COMPETENCE_WINDOW = 20     # Episodes averaged for the competence check
 # Each config runs on the SAME plastic LocalRLWorker so that the ONLY thing
 # that differs is which neuromodulator is active — a fair, single-variable
 # ablation.  "Static Baseline" is that identical architecture with all
-# hormones frozen at baseline (α/τ/γ constant at their base values), i.e. the
+# hormones frozen at baseline (α/ε/γ constant at their base values), i.e. the
 # static agent the hypothesis claims to beat.  "Vanilla DQN" is a separate
 # plain-MLP ε-greedy reference (marked with "vanilla") — NOT a clean ablation,
 # kept only as an external sanity anchor.

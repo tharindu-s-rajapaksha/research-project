@@ -64,7 +64,7 @@ def plot_experiment_1(results: dict, suffix: str = ""):
     ax = axes[1, 0]
     hp = np.arange(len(results["alpha"]))
     ax.plot(hp, results["alpha"], label="α", color="purple")
-    ax.plot(hp, results["tau"], label="τ", color="orange")
+    ax.plot(hp, results["epsilon"], label="ε", color="orange")
     ax.plot(hp, results["gamma"], label="γ", color="teal")
     for s in cfg.EXP1_SWITCH_STEPS:
         ax.axvline(s, color="red", ls="--", alpha=0.5)
@@ -122,7 +122,7 @@ def plot_experiment_2(results: dict, suffix: str = ""):
     ax = axes[1, 0]
     hp = np.arange(len(results["alpha"]))
     ax.plot(hp, results["alpha"], label="α", color="purple")
-    ax.plot(hp, results["tau"], label="τ", color="orange")
+    ax.plot(hp, results["epsilon"], label="ε", color="orange")
     ax.plot(hp, results["gamma"], label="γ", color="teal")
     ax.set(xlabel="Step", ylabel="Value", title="Hyperparameter Dynamics")
     ax.legend(fontsize=8)
@@ -182,8 +182,8 @@ def plot_experiment_3(results: dict, suffix: str = ""):
     hp = np.arange(len(results["alpha"]))
     ax.plot(hp[::s], np.array(results["alpha"])[::s],
             label="α", color="purple", lw=0.8)
-    ax.plot(hp[::s], np.array(results["tau"])[::s],
-            label="τ", color="orange", lw=0.8)
+    ax.plot(hp[::s], np.array(results["epsilon"])[::s],
+            label="ε", color="orange", lw=0.8)
     ax.plot(hp[::s], np.array(results["gamma"])[::s],
             label="γ", color="teal", lw=0.8)
     ax.set(xlabel="Timestep", ylabel="Value", title="Hyperparameters")

@@ -12,7 +12,7 @@ This project implements a **Multi-Neuromodulated Modular RL Architecture** desig
     - **Noradrenaline (NA)**: Responds to environmental volatility, increasing exploration and learning rates during shifts.
     - **Serotonin (5-HT)**: Responds to high-risk/aversive events, increasing harm aversion and survival probability.
 - **Differentiable Plasticity**: Uses a `NeuromodulatedLinear` layer with per-synapse Hebbian eligibility traces, allowing for rapid weight adaptation beyond standard gradient descent.
-- **Hormonal Meta-Agent**: The "conductor" that monitors performance and modulates $\alpha$ (learning rate), $\tau$ (softmax temperature), and $\gamma$ (discount factor) in real-time.
+- **Hormonal Meta-Agent**: The "conductor" that monitors performance and modulates $\alpha$ (learning rate), $\epsilon$ (ε-greedy exploration rate), $\gamma$ (discount factor), and a 5-HT loss-aversion gain in real-time.
 
 ---
 

@@ -55,7 +55,8 @@ class NeuromodulatedLinear(nn.Module):
         self.register_buffer("hebb_trace", torch.zeros(out_features, in_features))
 
         # Learnable plasticity coefficient (α in Backpropamine)
-        self.alpha = nn.Parameter(torch.full((out_features, in_features), 0.01))
+        self.alpha = nn.Parameter(
+            torch.full((out_features, in_features), cfg.PLASTIC_ALPHA_INIT))
 
     def reset_trace(self):
         """Zero the Hebbian trace at the start of a new episode/lifetime."""

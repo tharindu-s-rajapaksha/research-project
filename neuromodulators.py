@@ -150,10 +150,17 @@ class HormoneEngine:
     def _compute_na_spike(self, td_error: float, reward: float) -> float:
         """Noradrenaline spike driven by 'Unexpected Uncertainty' (Section 3A).
 
-        Uses dual-window mean-shift detection on BOTH rewards and absolute
-        TD-errors.  Fires when EITHER signal shows a statistically
-        significant shift, making the detector robust regardless of how
-        well-trained the agent is.
+        NA is a directional, one-sided mean-shift detector on the external
+        REWARD signal: it fires only when recent reward drops significantly
+        below the established baseline — an unexpected environmental
+        worsening (Yu & Dayan 2005).  We deliberately key NA on reward, NOT
+        on the internal TD-error: TD-error is large and noisy throughout
+        ordinary learning (and during a value-based agent's routine
+        performance collapses), so a TD-driven detector fires constantly on
+        stable-control tasks and floods the agent with spurious exploration.
+        Dynamics-change adaptation where the reward stream is uninformative
+        (e.g. CartPole, constant +1/step) is instead handled by dopamine,
+        which keys on the TD-error spike after the shock.
         """
         self._error_history.append(abs(td_error))
         self._reward_history.append(reward)
@@ -164,22 +171,12 @@ class HormoneEngine:
 
         short_len = max(20, self._reward_history.maxlen // 5)
 
-        # Signal 1: Reward mean-shift
+        # Reward DROP (recent mean below the established baseline), one-sided.
         rewards = list(self._reward_history)
         r_recent   = rewards[-short_len:]
         r_baseline = rewards[:-short_len]
-        r_z = abs(float(np.mean(r_recent)) - float(np.mean(r_baseline))) / \
-              (float(np.std(r_baseline)) + 1e-6)
-
-        # Signal 2: TD-error mean-shift
-        errors = list(self._error_history)
-        e_recent   = errors[-short_len:]
-        e_baseline = errors[:-short_len]
-        e_z = abs(float(np.mean(e_recent)) - float(np.mean(e_baseline))) / \
-              (float(np.std(e_baseline)) + 1e-6)
-
-        # Take the stronger signal
-        z_score = max(r_z, e_z)
+        z_score = max(0.0, float(np.mean(r_baseline)) - float(np.mean(r_recent))) / \
+                  (float(np.std(r_baseline)) + 1e-6)
 
         if z_score > cfg.VOLATILITY_THRESHOLD:
             return (z_score - cfg.VOLATILITY_THRESHOLD) * cfg.NA_SPIKE_SCALE

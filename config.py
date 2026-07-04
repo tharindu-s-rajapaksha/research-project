@@ -48,6 +48,9 @@ DEATH_PENALTY = -500.0          # Canonical "death" penalty value
 # ─────────────────────────────────────────────────────────────────────
 ETA_DECAY = 0.05                # η_decay  — trace decay rate
 ETA_TRACE = 0.01                # η_trace  — trace accumulation rate
+PLASTIC_ALPHA_INIT = 0.002      # initial per-synapse plastic coefficient α
+                                # (small: strong fast-weights destabilised
+                                #  stable-control learning)
 
 # ─────────────────────────────────────────────────────────────────────
 # Worker DQN  (Section 2B + 4B)
@@ -61,7 +64,8 @@ GAMMA_MAX    = 0.999            # γ ceiling — horizon when 5-HT is saturated 
 # Boltzmann/softmax temperature proved uncompetitive on near-equal-Q tasks
 # (e.g. CartPole), so NA is routed through ε instead of τ.
 EPSILON_BASE = 0.1              # ε at rest (matches the vanilla-DQN baseline)
-EPSILON_MAX  = 0.9              # ε when NA is saturated (volatility → explore)
+EPSILON_MAX  = 0.5              # ε when NA is saturated (a strong nudge, not
+                                # near-random — 0.9 wrecked stable control)
 
 # Serotonin harm-aversion pathway (two mechanisms, both gated by 5-HT):
 #  1. Punishment-sensitive learning: up-weight the loss from negative-reward
@@ -109,8 +113,8 @@ EXP3_POST_EPISODES     = 300    # Post-perturbation episodes
 EXP3_NEW_GRAVITY       = 29.4   # 3× the CartPole default gravity (9.8)
 EXP3_FORCE_SCALE       = 0.5    # Actuator force_mag multiplier (halves push
                                 # strength) — proxy for a changed-dynamics shock
-EXP3_RECOVERY_TARGET   = 400    # Steps sustained to count as "recovered"
-EXP3_COMPETENCE_TARGET = 450    # Pre-perturb rolling mean needed to be "competent"
+EXP3_RECOVERY_TARGET   = 300    # Steps sustained to count as "recovered" (60% of max)
+EXP3_COMPETENCE_TARGET = 350    # Pre-perturb rolling mean needed to be "competent" (70%)
 EXP3_COMPETENCE_WINDOW = 20     # Episodes averaged for the competence check
 
 # ─────────────────────────────────────────────────────────────────────

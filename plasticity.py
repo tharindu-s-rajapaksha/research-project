@@ -30,12 +30,15 @@ class NeuromodulatedLinear(nn.Module):
 
     def __init__(self, in_features: int, out_features: int,
                  eta_decay: float = cfg.ETA_DECAY,
-                 eta_trace: float = cfg.ETA_TRACE):
+                 eta_trace: float = cfg.ETA_TRACE,
+                 plastic_enabled: bool = True):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
         self.eta_decay = eta_decay
         self.eta_trace = eta_trace
+        # If False, the layer behaves as a plain Linear (ablation control).
+        self.plastic_enabled = plastic_enabled
 
         # Baseline (slow) weights — updated by backpropagation
         self.weight = nn.Parameter(torch.empty(out_features, in_features))
@@ -53,7 +56,8 @@ class NeuromodulatedLinear(nn.Module):
         self.hebb_trace.zero_()
 
     def forward(self, x: torch.Tensor,
-                hormone_signal: float = 1.0) -> torch.Tensor:
+                hormone_signal: float = 1.0,
+                update_trace: bool = True) -> torch.Tensor:
         """Forward pass with plastic weight modulation.
 
         Args:
@@ -61,23 +65,34 @@ class NeuromodulatedLinear(nn.Module):
             hormone_signal:  Scalar from the Meta-Agent's hormonal vector
                              (typically DA_eff). Controls the magnitude of
                              the Hebbian contribution.
+            update_trace:    Whether to advance the eligibility trace. Should
+                             only be True on the sequential, online "lifetime"
+                             pass (action selection). It is False for random
+                             replay minibatches and for the target network, so
+                             those do not corrupt the trace with batch-mean
+                             statistics over unrelated states.
 
         Returns:
             Output tensor of shape (batch, out_features).
         """
+        if not self.plastic_enabled:
+            # Plain linear layer (no plastic term, no trace) — ablation control.
+            return F.linear(x, self.weight, self.bias)
+
         # W_active = W_baseline + hormone_signal × α × E_t  (Section 4A)
         w_active = self.weight + hormone_signal * self.alpha * self.hebb_trace
         output = F.linear(x, w_active, self.bias)
 
         # ── Update eligibility trace (Hebbian rule) ──────────────────
         # E_t = (1 - η_decay) · E_{t-1} + η_trace · (Pre_i × Post_j)
-        with torch.no_grad():
-            # Pre = mean over batch of x;  Post = mean over batch of output
-            pre  = x.mean(dim=0)          # (in_features,)
-            post = output.mean(dim=0)     # (out_features,)
-            outer = torch.outer(post, pre)  # (out, in)
-            self.hebb_trace = ((1.0 - self.eta_decay) * self.hebb_trace
-                               + self.eta_trace * outer)
+        if update_trace:
+            with torch.no_grad():
+                # Pre = mean over batch of x;  Post = mean over batch of output
+                pre  = x.mean(dim=0)          # (in_features,)
+                post = output.mean(dim=0)     # (out_features,)
+                outer = torch.outer(post, pre)  # (out, in)
+                self.hebb_trace = ((1.0 - self.eta_decay) * self.hebb_trace
+                                   + self.eta_trace * outer)
 
         return output
 
@@ -91,24 +106,29 @@ class PlasticNetwork(nn.Module):
               → Linear(output)   [head — standard, no plasticity]
     """
 
-    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int):
+    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int,
+                 plastic: bool = True):
         super().__init__()
-        self.plastic1 = NeuromodulatedLinear(input_dim, hidden_dim)
-        self.plastic2 = NeuromodulatedLinear(hidden_dim, hidden_dim)
+        self.plastic1 = NeuromodulatedLinear(input_dim, hidden_dim,
+                                             plastic_enabled=plastic)
+        self.plastic2 = NeuromodulatedLinear(hidden_dim, hidden_dim,
+                                             plastic_enabled=plastic)
         self.head = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x: torch.Tensor,
-                hormone_signal: float = 1.0) -> torch.Tensor:
+                hormone_signal: float = 1.0,
+                update_trace: bool = True) -> torch.Tensor:
         """
         Args:
             x:              State tensor  (batch, input_dim).
             hormone_signal: Scalar modulation from Meta-Agent.
+            update_trace:   Advance Hebbian traces (online pass only).
 
         Returns:
             Q-values tensor (batch, output_dim).
         """
-        x = F.relu(self.plastic1(x, hormone_signal))
-        x = F.relu(self.plastic2(x, hormone_signal))
+        x = F.relu(self.plastic1(x, hormone_signal, update_trace))
+        x = F.relu(self.plastic2(x, hormone_signal, update_trace))
         return self.head(x)
 
     def reset_traces(self):

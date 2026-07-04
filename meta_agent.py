@@ -12,7 +12,6 @@ Responsibilities (Section 2A):
 """
 
 import numpy as np
-from collections import deque
 
 import config as cfg
 from neuromodulators import HormoneEngine
@@ -27,9 +26,14 @@ class HormonalMetaAgent:
 
     It translates the raw hormone levels into dynamic hyperparameters
     for the Local Worker (Section 4B):
-        α_t  = α_base × (1 + |DA_eff − rest|)      (Learning Rate)
-        τ_t  = τ_base × (1 / NA_concentration)   (Softmax Temperature)
-        γ_t  = γ_base × σ(5HT)                   (Discount Factor)
+        α_t  = α_base × (1 + |DA_eff − rest|)               (Learning Rate)
+        τ_t  = τ_base · anneal(t) × NA                      (Softmax Temperature)
+        γ_t  = γ_base × (floor + range·σ(5HT − baseline))   (Discount Factor)
+
+    Note: the spec wrote τ_t = τ_base × (1 / NA), but with a logistic
+    softmax (logits / τ) that would *reduce* exploration as NA rises —
+    the opposite of the stated goal ("more NA → more random"). We instead
+    use τ ∝ NA so higher noradrenaline correctly widens the policy.
     """
 
     def __init__(self, enable_da: bool = True, enable_na: bool = True,
@@ -37,7 +41,6 @@ class HormonalMetaAgent:
         self.engine = HormoneEngine(enable_da, enable_na, enable_5ht)
 
         # Performance trackers
-        self._recent_rewards = deque(maxlen=cfg.VOLATILITY_WINDOW)
         self._death_count = 0
         self._total_steps = 0
 
@@ -63,7 +66,6 @@ class HormonalMetaAgent:
                 'alpha', 'tau', 'gamma', and raw hormone levels.
         """
         self._total_steps += 1
-        self._recent_rewards.append(reward)
 
         if done and reward <= cfg.RISK_PENALTY_THRESHOLD:
             self._death_count += 1
@@ -98,7 +100,6 @@ class HormonalMetaAgent:
     def hard_reset(self):
         """Full reset including hormone levels (for new experiment run)."""
         self.engine.reset()
-        self._recent_rewards.clear()
         self._death_count = 0
         self._total_steps = 0
         self.history_alpha.clear()
@@ -129,21 +130,30 @@ class HormonalMetaAgent:
         surprise = 1.0 + abs(da_eff - da_eff_rest)
         return cfg.ALPHA_BASE * float(np.clip(surprise, 0.5, 5.0))
 
-    @staticmethod
-    def _modulate_temperature(na: float) -> float:
-        """τ_t = τ_base × clip(NA, 0.1, 10.0).
+    def _modulate_temperature(self, na: float) -> float:
+        """τ_t = τ_base · anneal(t) × clip(NA, 0.1, 10.0).
 
         High NA (uncertainty) → high temperature → more random exploration.
         (Higher temperature in softmax → more uniform distribution.)
+
+        The tonic base also decays over training so the agent can converge
+        to exploitation; NA spikes still re-open exploration on volatility
+        because they multiply the (annealed) base.
         """
-        return cfg.TAU_BASE * float(np.clip(na, 0.1, 10.0))
+        anneal = max(cfg.TAU_MIN_FRAC,
+                     float(np.exp(-self._total_steps / cfg.TAU_ANNEAL_STEPS)))
+        tau_base = cfg.TAU_BASE * anneal
+        return tau_base * float(np.clip(na, 0.1, 10.0))
 
     @staticmethod
     def _modulate_discount(ht: float) -> float:
-        """γ_t = γ_base × σ(5HT - baseline).
+        """γ_t = γ_base × (floor + range · σ(5HT − baseline)).
 
-        High 5-HT → sigmoid > 0.5 → agent values long-term survival;
-        Low  5-HT → sigmoid < 0.5 → agent is more short-sighted.
+        Resting 5-HT (=baseline) → factor ≈ floor + range/2, so γ stays near
+        γ_base instead of collapsing to ~0.5 (which would cripple long-horizon
+        tasks like CartPole). High 5-HT → factor → floor+range → agent values
+        long-term survival; low 5-HT → factor → floor → more short-sighted.
         """
         sigmoid = 1.0 / (1.0 + np.exp(-(ht - cfg.HORMONE_BASELINE)))
-        return cfg.GAMMA_BASE * float(sigmoid)
+        factor = cfg.GAMMA_FLOOR_FRAC + cfg.GAMMA_MOD_RANGE * sigmoid
+        return cfg.GAMMA_BASE * float(factor)

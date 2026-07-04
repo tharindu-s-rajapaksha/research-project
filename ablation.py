@@ -16,6 +16,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
+from scipy import stats
 
 import config as cfg
 from experiments import run_experiment_1, run_experiment_2, run_experiment_3
@@ -23,85 +24,129 @@ from evaluation import (plot_experiment_1, plot_experiment_2,
                         plot_experiment_3, export_csv, compute_pvalues)
 
 
-def run_ablation_study(seed: int = cfg.SEED, exp_id: int = None) -> dict:
-    """Run experiments across all ablation configs.
+# Primary scalar metric per experiment (used for bars, stats, conclusions).
+PRIMARY_METRIC = {
+    "Experiment_1": "adaptation_latency",
+    "Experiment_2": "death_count",
+    "Experiment_3": "recovery_time",
+}
+
+
+def _extract_metrics(exp_id: int, res: dict) -> dict:
+    """Pull the scalar summary metrics from one experiment run."""
+    m = {"total_reward": float(sum(res.get("rewards", [])))}
+    if exp_id == 1:
+        m["adaptation_latency"] = float(res["adaptation_latency"])
+    elif exp_id == 2:
+        m["death_count"] = float(res["death_count"])
+        sv = res.get("survival_steps", [0]) or [0]
+        m["survival_rate"] = float(np.mean(sv))
+    elif exp_id == 3:
+        m["recovery_time"] = float(res["recovery_time"])
+    return m
+
+
+def run_ablation_study(seeds=None, exp_id: int = None, seed: int = None):
+    """Run experiments across all ablation configs over multiple seeds.
 
     Args:
-        seed: Random seed.
+        seeds:  List of independent random seeds (defaults to cfg.EXP_SEEDS).
         exp_id: If provided (1, 2, or 3), only runs that specific experiment.
+        seed:   Back-compat single seed; used only if ``seeds`` is None.
 
     Returns:
-        Nested dict: {experiment_name: {config_label: results_dict}}
+        (representative, metrics_by_config):
+          • representative: {exp_key: {config_label: results_dict}} using the
+            first seed — full time-series for dashboards / regret curves.
+          • metrics_by_config: {exp_key: {config_label: {metric: np.array}}}
+            with one value per seed (plus a 'seed' array), for stats / CSV.
     """
-    exp_keys = [f"Experiment_{i}" for i in ([exp_id] if exp_id else [1, 2, 3])]
-    all_results = {k: {} for k in exp_keys}
+    if seeds is None:
+        seeds = [seed] if seed is not None else cfg.EXP_SEEDS
+
+    exp_ids = [exp_id] if exp_id else [1, 2, 3]
+    exp_keys = [f"Experiment_{i}" for i in exp_ids]
+    representative = {k: {} for k in exp_keys}
+    metrics_by_config = {k: {} for k in exp_keys}
+
+    runners = {1: run_experiment_1, 2: run_experiment_2, 3: run_experiment_3}
+    plotters = {1: plot_experiment_1, 2: plot_experiment_2, 3: plot_experiment_3}
+    names = {1: "Volatile Bandit", 2: "High-Stakes Foraging", 3: "CartPole Adaptation"}
 
     for config_label, abl_cfg in cfg.ABLATION_CONFIGS.items():
         print(f"\n{'='*60}")
-        print(f"  Configuration: {config_label}")
+        print(f"  Configuration: {config_label}   (seeds={seeds})")
         print(f"{'='*60}")
         sfx = f"_{config_label.replace(' ', '_').lower()}"
 
-        # Experiment 1
-        if exp_id is None or exp_id == 1:
-            print(f"  > Running Experiment 1 (Volatile Bandit)...")
-            r1 = run_experiment_1(ablation_cfg=abl_cfg, seed=seed, label=config_label)
-            all_results["Experiment_1"][config_label] = r1
-            plot_experiment_1(r1, suffix=sfx)
-            print(f"    Adaptation Latency: {r1['adaptation_latency']} steps")
+        for i in exp_ids:
+            ek = f"Experiment_{i}"
+            print(f"  > Running Experiment {i} ({names[i]})...")
+            per_seed_metrics = {}
+            per_seed_results = []
+            for sd in seeds:
+                res = runners[i](ablation_cfg=abl_cfg, seed=sd, label=config_label)
+                per_seed_results.append(res)
+                m = _extract_metrics(i, res)
+                m["seed"] = float(sd)
+                for name, val in m.items():
+                    per_seed_metrics.setdefault(name, []).append(val)
 
-        # Experiment 2
-        if exp_id is None or exp_id == 2:
-            print(f"  > Running Experiment 2 (High-Stakes Foraging)...")
-            r2 = run_experiment_2(ablation_cfg=abl_cfg, seed=seed, label=config_label)
-            all_results["Experiment_2"][config_label] = r2
-            plot_experiment_2(r2, suffix=sfx)
-            print(f"    Deaths: {r2['death_count']}, Total Reward: {r2['total_reward']:.1f}")
+            metrics_by_config[ek][config_label] = {
+                name: np.array(vals, dtype=float)
+                for name, vals in per_seed_metrics.items()
+            }
+            # First seed is the representative run for dashboards.
+            representative[ek][config_label] = per_seed_results[0]
+            plotters[i](per_seed_results[0], suffix=sfx)
 
-        # Experiment 3
-        if exp_id is None or exp_id == 3:
-            print(f"  > Running Experiment 3 (CartPole Adaptation)...")
-            r3 = run_experiment_3(ablation_cfg=abl_cfg, seed=seed, label=config_label)
-            all_results["Experiment_3"][config_label] = r3
-            plot_experiment_3(r3, suffix=sfx)
-            print(f"    Recovery Time: {r3['recovery_time']} episodes")
+            metric = PRIMARY_METRIC[ek]
+            arr = metrics_by_config[ek][config_label][metric]
+            print(f"    {metric}: mean={arr.mean():.1f} ± {arr.std():.1f} "
+                  f"(n={len(arr)})")
 
-    return all_results
+    return representative, metrics_by_config
 
 
-def plot_comparative_bars(all_results: dict, merge: bool = False):
-    """Comparative bar chart: Survival Rate & Adaptation Latency (Sec 9B)."""
+def plot_comparative_bars(metrics_by_config: dict, merge: bool = False):
+    """Comparative bar chart of each experiment's primary metric (Sec 9B).
+
+    Bars show the mean over seeds with std error bars.
+    """
     os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
 
-    configs = list(cfg.ABLATION_CONFIGS.keys())
-    colors = ["#2ecc71", "#3498db", "#e74c3c", "#95a5a6"]
-    
-    active_exps = [k for k in all_results.keys() if all_results[k]]
-    if not active_exps: return
+    active_exps = [k for k in metrics_by_config.keys() if metrics_by_config[k]]
+    if not active_exps:
+        return
+
+    # Use whichever configs are actually present (keeps order from cfg).
+    configs = [c for c in cfg.ABLATION_CONFIGS.keys()
+               if any(c in metrics_by_config[k] for k in active_exps)]
+    palette = sns.color_palette("husl", len(configs))
+
+    metric_meta = {
+        "Experiment_1": ("adaptation_latency", "Steps", "Exp 1: Adaptation Latency"),
+        "Experiment_2": ("death_count", "Deaths", "Exp 2: Death Count"),
+        "Experiment_3": ("recovery_time", "Episodes", "Exp 3: Recovery Time"),
+    }
 
     def draw_bar(ax, exp_key):
-        if exp_key == "Experiment_1":
-            vals = [all_results["Experiment_1"][c]["adaptation_latency"] for c in configs]
-            ax.set_ylabel("Steps")
-            ax.set_title("Exp 1: Adaptation Latency")
-        elif exp_key == "Experiment_2":
-            vals = [all_results["Experiment_2"][c]["death_count"] for c in configs]
-            ax.set_ylabel("Deaths")
-            ax.set_title("Exp 2: Death Count")
-        elif exp_key == "Experiment_3":
-            vals = [all_results["Experiment_3"][c]["recovery_time"] for c in configs]
-            ax.set_ylabel("Episodes")
-            ax.set_title("Exp 3: Recovery Time")
-        
-        bars = ax.bar(configs, vals, color=colors)
+        metric, ylabel, title = metric_meta[exp_key]
+        means, stds = [], []
+        for c in configs:
+            arr = metrics_by_config[exp_key].get(c, {}).get(metric, np.array([]))
+            means.append(float(np.mean(arr)) if len(arr) else 0.0)
+            stds.append(float(np.std(arr)) if len(arr) > 1 else 0.0)
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+
+        bars = ax.bar(configs, means, yerr=stds, capsize=4, color=palette)
         ax.tick_params(axis="x", rotation=25)
-        
-        # Add labels on top of bars
-        for bar in bars:
-            height = bar.get_height()
-            ax.annotate(f'{height:.1f}',
-                        xy=(bar.get_x() + bar.get_width() / 2, height),
-                        xytext=(0, 3), # 3 points vertical offset
+
+        for bar, mean in zip(bars, means):
+            ax.annotate(f'{mean:.1f}',
+                        xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                        xytext=(0, 3),
                         textcoords="offset points",
                         ha='center', va='bottom',
                         fontsize=9, fontweight='bold')
@@ -128,54 +173,82 @@ def plot_comparative_bars(all_results: dict, merge: bool = False):
             print(f"  [Saved] {fname}")
 
 
-def print_scientific_conclusions(all_results: dict):
-    """Print summary explaining why Full Model outperforms ablations."""
+def _mean(metrics_by_config, exp, config, metric):
+    arr = metrics_by_config.get(exp, {}).get(config, {}).get(metric)
+    return float(np.mean(arr)) if arr is not None and len(arr) else None
+
+
+def _pval(metrics_by_config, exp, a, b, metric):
+    arr_a = metrics_by_config.get(exp, {}).get(a, {}).get(metric)
+    arr_b = metrics_by_config.get(exp, {}).get(b, {}).get(metric)
+    if arr_a is not None and arr_b is not None and len(arr_a) > 1 and len(arr_b) > 1:
+        if np.std(arr_a) == 0 and np.std(arr_b) == 0:
+            # Both constant across seeds: t-test undefined.
+            return 1.0 if np.mean(arr_a) == np.mean(arr_b) else 0.0
+        _, p = stats.ttest_ind(arr_a, arr_b, equal_var=False)
+        return float(p)
+    return None
+
+
+def print_scientific_conclusions(metrics_by_config: dict):
+    """Print summary explaining why the Full Model outperforms ablations.
+
+    Uses seed-averaged metrics and (where ≥2 seeds) cross-seed Welch p-values.
+    """
     print("\n" + "=" * 60)
-    print("  SCIENTIFIC CONCLUSIONS")
+    print("  SCIENTIFIC CONCLUSIONS  (means over seeds)")
     print("=" * 60)
 
+    def _sig(p):
+        if p is None:
+            return "(p=n/a: need ≥2 seeds)"
+        return f"(p={p:.3f}{'*' if p < 0.05 else ''})"
+
     # Experiment 1
-    if "Experiment_1" in all_results and all_results["Experiment_1"]:
-        e1 = all_results["Experiment_1"]
-        full_lat = e1["Full Model"]["adaptation_latency"]
-        na_lat = e1["Ablated NA"]["adaptation_latency"]
+    if metrics_by_config.get("Experiment_1"):
+        full = _mean(metrics_by_config, "Experiment_1", "Full Model", "adaptation_latency")
+        na = _mean(metrics_by_config, "Experiment_1", "Ablated NA", "adaptation_latency")
+        p = _pval(metrics_by_config, "Experiment_1", "Full Model", "Ablated NA", "adaptation_latency")
         print(f"\n[Exp 1 - Volatile Bandit]")
-        print(f"  Full Model adaptation latency: {full_lat} steps")
-        print(f"  Ablated NA adaptation latency: {na_lat} steps")
-        if full_lat < na_lat:
-            pct = (na_lat - full_lat) / max(na_lat, 1) * 100
-            print(f"  -> The absence of NA resulted in {pct:.0f}% slower "
-                  f"adaptation to the reward distribution switch.")
-        else:
-            print(f"  -> NA ablation did not worsen adaptation in this run.")
+        print(f"  Full Model adaptation latency: {full:.1f} steps")
+        if na is not None:
+            print(f"  Ablated NA adaptation latency: {na:.1f} steps  {_sig(p)}")
+            if full < na:
+                pct = (na - full) / max(na, 1) * 100
+                print(f"  -> Removing NA slowed adaptation to the reward switch "
+                      f"by {pct:.0f}%.")
+            else:
+                print(f"  -> NA ablation did not worsen adaptation in this run.")
 
     # Experiment 2
-    if "Experiment_2" in all_results and all_results["Experiment_2"]:
-        e2 = all_results["Experiment_2"]
-        full_d = e2["Full Model"]["death_count"]
-        ht_d = e2["Ablated 5-HT"]["death_count"]
+    if metrics_by_config.get("Experiment_2"):
+        full = _mean(metrics_by_config, "Experiment_2", "Full Model", "death_count")
+        ht = _mean(metrics_by_config, "Experiment_2", "Ablated 5-HT", "death_count")
+        p = _pval(metrics_by_config, "Experiment_2", "Full Model", "Ablated 5-HT", "death_count")
         print(f"\n[Exp 2 - High-Stakes Foraging]")
-        print(f"  Full Model deaths: {full_d}")
-        print(f"  Ablated 5-HT deaths: {ht_d}")
-        if full_d < ht_d:
-            pct = (ht_d - full_d) / max(ht_d, 1) * 100
-            print(f"  -> The absence of 5-HT resulted in {pct:.0f}% more "
-                  f"Death resets, confirming its role in harm aversion.")
-        else:
-            print(f"  -> 5-HT ablation did not increase deaths in this run.")
+        print(f"  Full Model deaths: {full:.1f}")
+        if ht is not None:
+            print(f"  Ablated 5-HT deaths: {ht:.1f}  {_sig(p)}")
+            if full < ht:
+                pct = (ht - full) / max(ht, 1) * 100
+                print(f"  -> Removing 5-HT produced {pct:.0f}% more death resets, "
+                      f"confirming its role in harm aversion.")
+            else:
+                print(f"  -> 5-HT ablation did not increase deaths in this run.")
 
     # Experiment 3
-    if "Experiment_3" in all_results and all_results["Experiment_3"]:
-        e3 = all_results["Experiment_3"]
-        full_r = e3["Full Model"]["recovery_time"]
-        static_r = e3["Static Baseline"]["recovery_time"]
+    if metrics_by_config.get("Experiment_3"):
+        full = _mean(metrics_by_config, "Experiment_3", "Full Model", "recovery_time")
+        static = _mean(metrics_by_config, "Experiment_3", "Static Baseline", "recovery_time")
+        p = _pval(metrics_by_config, "Experiment_3", "Full Model", "Static Baseline", "recovery_time")
         print(f"\n[Exp 3 - CartPole Physics Adaptation]")
-        print(f"  Full Model recovery: {full_r} episodes")
-        print(f"  Static Baseline recovery: {static_r} episodes")
-        if full_r < static_r:
-            pct = (static_r - full_r) / max(static_r, 1) * 100
-            print(f"  -> Dynamic neuromodulation achieved {pct:.0f}% faster "
-                  f"recovery after physics perturbation.")
-        else:
-            print(f"  -> Static baseline matched or outperformed in this run.")
+        print(f"  Full Model recovery: {full:.1f} episodes")
+        if static is not None:
+            print(f"  Static Baseline recovery: {static:.1f} episodes  {_sig(p)}")
+            if full < static:
+                pct = (static - full) / max(static, 1) * 100
+                print(f"  -> Dynamic neuromodulation recovered {pct:.0f}% faster "
+                      f"after the physics perturbation.")
+            else:
+                print(f"  -> Static baseline matched or outperformed in this run.")
     print()

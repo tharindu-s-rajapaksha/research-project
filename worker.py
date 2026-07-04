@@ -56,14 +56,18 @@ class LocalRLWorker:
         • Discount      γ  (TD target computation)
     """
 
-    def __init__(self, state_dim: int, action_dim: int, device: torch.device = cfg.DEVICE):
+    def __init__(self, state_dim: int, action_dim: int, device: torch.device = cfg.DEVICE,
+                 plastic: bool = True):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.device = device
 
-        # Online & Target networks (with differentiable plasticity)
-        self.policy_net = PlasticNetwork(state_dim, cfg.HIDDEN_DIM, action_dim).to(device)
-        self.target_net = PlasticNetwork(state_dim, cfg.HIDDEN_DIM, action_dim).to(device)
+        # Online & Target networks (with differentiable plasticity).
+        # plastic=False disables the Hebbian term (no-plasticity ablation control).
+        self.policy_net = PlasticNetwork(state_dim, cfg.HIDDEN_DIM, action_dim,
+                                         plastic=plastic).to(device)
+        self.target_net = PlasticNetwork(state_dim, cfg.HIDDEN_DIM, action_dim,
+                                         plastic=plastic).to(device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
@@ -96,7 +100,8 @@ class LocalRLWorker:
         """
         with torch.no_grad():
             s = torch.FloatTensor(state).unsqueeze(0).to(self.device)
-            q_values = self.policy_net(s, hormone_signal)
+            # Online "lifetime" pass — this is where the Hebbian trace advances.
+            q_values = self.policy_net(s, hormone_signal, update_trace=True)
             # Clamp Q-values to prevent numerical overflow in softmax
             q_values = q_values.clamp(-100.0, 100.0)
             tau = max(self.tau, 0.01)
@@ -139,12 +144,14 @@ class LocalRLWorker:
         next_states = torch.FloatTensor(np.array(batch.next_state)).to(self.device)
         dones = torch.FloatTensor(batch.done).to(self.device)
 
-        # Q(s, a)
-        q_values = self.policy_net(states, hormone_signal).gather(1, actions)
+        # Q(s, a) — replay minibatch; do NOT advance the trace (unrelated states).
+        q_values = self.policy_net(states, hormone_signal,
+                                   update_trace=False).gather(1, actions)
 
         # Target: r + γ max_a' Q_target(s', a')
         with torch.no_grad():
-            next_q = self.target_net(next_states, hormone_signal).max(1)[0]
+            next_q = self.target_net(next_states, hormone_signal,
+                                     update_trace=False).max(1)[0]
             target = rewards + self.gamma * next_q * (1.0 - dones)
 
         td_error = (target.unsqueeze(1) - q_values).mean().item()
@@ -186,7 +193,9 @@ class StaticBaselineWorker:
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.device = device
-        self.epsilon = epsilon
+        self.epsilon0 = epsilon       # initial exploration rate
+        self.epsilon = epsilon        # current (annealed) exploration rate
+        self._select_count = 0        # action-selection counter for ε annealing
 
         # Standard MLP (no plasticity)
         self.policy_net = nn.Sequential(
@@ -213,6 +222,10 @@ class StaticBaselineWorker:
         self._step_count = 0
 
     def select_action(self, state: np.ndarray, **_kwargs) -> int:
+        # Anneal ε over training so the baseline can also converge to exploitation.
+        self._select_count += 1
+        self.epsilon = max(cfg.EPSILON_MIN,
+                           self.epsilon0 * np.exp(-self._select_count / cfg.EPSILON_DECAY_STEPS))
         if random.random() < self.epsilon:
             return random.randrange(self.action_dim)
         with torch.no_grad():

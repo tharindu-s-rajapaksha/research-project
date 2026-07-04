@@ -20,15 +20,24 @@ from environments import VolatileBandit, HighStakesForaging
 
 
 def _make_agent(state_dim: int, action_dim: int, ablation_cfg: dict):
-    """Factory: build Meta-Agent + Worker pair based on ablation config."""
-    is_static = (not ablation_cfg["DA"] and not ablation_cfg["NA"]
-                 and not ablation_cfg["5HT"])
-    if is_static:
+    """Factory: build Meta-Agent + Worker pair based on ablation config.
+
+    Uses the config's explicit ``worker`` ("plastic"/"static") and ``plastic``
+    flags. Falls back to inferring a static baseline from all-hormones-off for
+    backward compatibility with older config dicts.
+    """
+    worker_type = ablation_cfg.get("worker")
+    if worker_type is None:
+        worker_type = ("static" if not (ablation_cfg["DA"] or ablation_cfg["NA"]
+                                         or ablation_cfg["5HT"]) else "plastic")
+
+    if worker_type == "static":
         worker = StaticBaselineWorker(state_dim, action_dim)
         meta = HormonalMetaAgent(enable_da=False, enable_na=False,
                                   enable_5ht=False)
     else:
-        worker = LocalRLWorker(state_dim, action_dim)
+        worker = LocalRLWorker(state_dim, action_dim,
+                               plastic=ablation_cfg.get("plastic", True))
         meta = HormonalMetaAgent(
             enable_da=ablation_cfg["DA"],
             enable_na=ablation_cfg["NA"],
@@ -80,20 +89,30 @@ def run_experiment_1(ablation_cfg: dict = None, seed: int = cfg.SEED,
         actions.append(action)
         state = next_state
 
-    # Adaptation latency: first step after switch where agent chooses arm 4
-    # for 5 consecutive pulls
-    last_switch = cfg.EXP1_SWITCH_STEPS[-1]
-    adaptation_latency = cfg.EXP1_TOTAL_STEPS - last_switch  # worst
-    post_switch_actions = actions[last_switch:]
-    consecutive = 0
-    for i, a in enumerate(post_switch_actions):
-        if a == 4:
-            consecutive += 1
-            if consecutive >= 5:
-                adaptation_latency = i - 4  # Start of the run
-                break
-        else:
-            consecutive = 0
+    # ── Adaptation latency ───────────────────────────────────────────
+    # For each reward switch, measure how many steps it takes the agent to
+    # lock onto the NEW optimal arm (5 consecutive pulls). The optimal arm
+    # per phase comes from the environment's own schedule, so the metric
+    # always tracks the *current* best arm (not a hardcoded one).
+    switch_steps = sorted(cfg.EXP1_SWITCH_STEPS)
+    per_switch_latency = []
+    for j, s in enumerate(switch_steps):
+        next_s = switch_steps[j + 1] if j + 1 < len(switch_steps) else cfg.EXP1_TOTAL_STEPS
+        target_arm = env.optimal_sequence[j + 1]
+        window = actions[s:next_s]
+        latency = len(window)  # worst case: never adapted within this phase
+        consecutive = 0
+        for i, a in enumerate(window):
+            if a == target_arm:
+                consecutive += 1
+                if consecutive >= 5:
+                    latency = i - 4  # start of the 5-pull run
+                    break
+            else:
+                consecutive = 0
+        per_switch_latency.append(latency)
+
+    adaptation_latency = float(np.mean(per_switch_latency)) if per_switch_latency else 0.0
 
     return {
         "rewards": rewards,
@@ -106,6 +125,7 @@ def run_experiment_1(ablation_cfg: dict = None, seed: int = cfg.SEED,
         "tau": list(meta.history_tau),
         "gamma": list(meta.history_gamma),
         "adaptation_latency": adaptation_latency,
+        "per_switch_latency": per_switch_latency,
         "label": label,
     }
 

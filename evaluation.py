@@ -218,56 +218,102 @@ def plot_regret_curve(results: dict, optimal_reward: float,
     print(f"  [Saved] {fname}")
 
 
-def export_csv(all_results: dict, filename: str = "experiment_results.csv"):
-    """Export results to CSV for statistical testing."""
+def export_csv(metrics_by_config: dict, filename: str = "experiment_results.csv"):
+    """Export per-seed metrics in long format for statistical testing.
+
+    Args:
+        metrics_by_config: {exp_key: {config: {metric: np.array over seeds}}}
+                           (includes a 'seed' array per config).
+
+    Writes:
+        • <filename>           — one row per (experiment, config, seed).
+        • <filename>_summary   — mean/std per (experiment, config).
+    """
     _ensure_dir()
     rows = []
-    for exp_name, configs in all_results.items():
-        for cfg_label, res in configs.items():
-            row = {"Experiment": exp_name, "Configuration": cfg_label,
-                   "Total_Reward": sum(res.get("rewards", []))}
-            if "adaptation_latency" in res:
-                row["Adaptation_Latency"] = res["adaptation_latency"]
-            if "death_count" in res:
-                row["Death_Count"] = res["death_count"]
-                row["Survival_Rate"] = np.mean(res.get("survival_steps", [0]))
-            if "recovery_time" in res:
-                row["Recovery_Time"] = res["recovery_time"]
-            rows.append(row)
+    for exp_name, configs in metrics_by_config.items():
+        for cfg_label, metrics in configs.items():
+            seeds = metrics.get("seed")
+            n = len(seeds) if seeds is not None else 0
+            for si in range(n):
+                row = {"Experiment": exp_name, "Configuration": cfg_label,
+                       "Seed": int(seeds[si])}
+                for name, arr in metrics.items():
+                    if name == "seed":
+                        continue
+                    row[name] = float(arr[si])
+                rows.append(row)
     df = pd.DataFrame(rows)
     fpath = os.path.join(cfg.RESULTS_DIR, filename)
     df.to_csv(fpath, index=False)
     print(f"  [Saved] {fpath}")
+
+    # Summary: mean/std per (Experiment, Configuration)
+    if not df.empty:
+        metric_cols = [c for c in df.columns
+                       if c not in ("Experiment", "Configuration", "Seed")]
+        summary = (df.groupby(["Experiment", "Configuration"], sort=False)[metric_cols]
+                   .agg(["mean", "std"]).reset_index())
+        summary.columns = ["_".join([str(c) for c in col if c != ""]).strip("_")
+                           for col in summary.columns.values]
+        spath = os.path.join(cfg.RESULTS_DIR,
+                             filename.replace(".csv", "_summary.csv"))
+        summary.to_csv(spath, index=False)
+        print(f"  [Saved] {spath}")
     return df
 
 
-def compute_pvalues(all_results: dict):
-    """Welch's t-test between Full Model and each ablation."""
+# Primary scalar metric used for significance testing per experiment.
+_PRIMARY_METRIC = {
+    "Experiment_1": "adaptation_latency",
+    "Experiment_2": "death_count",
+    "Experiment_3": "recovery_time",
+}
+
+
+def compute_pvalues(metrics_by_config: dict):
+    """Welch's t-test across independent seeds: Full Model vs each ablation.
+
+    Tests the experiment's primary metric (Exp1: latency, Exp2: deaths,
+    Exp3: recovery time) using one value per seed — i.e. genuinely
+    independent samples, not autocorrelated windows of a single run.
+    """
     _ensure_dir()
     rows = []
-    for exp_name, configs in all_results.items():
+    for exp_name, configs in metrics_by_config.items():
         if "Full Model" not in configs:
             continue
-        full = np.array(configs["Full Model"]["rewards"])
-        for cfg_label, res in configs.items():
+        metric = _PRIMARY_METRIC.get(exp_name)
+        full = configs["Full Model"].get(metric)
+        if full is None:
+            continue
+        for cfg_label, metrics in configs.items():
             if cfg_label == "Full Model":
                 continue
-            abl = np.array(res["rewards"])
-            w = 50
-            n = min(len(full), len(abl))
-            fc = [full[i:i+w].mean() for i in range(0, n-w, w)]
-            ac = [abl[i:i+w].mean() for i in range(0, n-w, w)]
-            if len(fc) > 1 and len(ac) > 1:
-                t, p = stats.ttest_ind(fc, ac, equal_var=False)
+            abl = metrics.get(metric)
+            if abl is not None and len(full) > 1 and len(abl) > 1:
+                if np.std(full) == 0 and np.std(abl) == 0:
+                    # Both constant across seeds: t-test is undefined (NaN).
+                    same = np.mean(full) == np.mean(abl)
+                    t, p = (0.0, 1.0) if same else (float("inf"), 0.0)
+                else:
+                    t, p = stats.ttest_ind(full, abl, equal_var=False)
             else:
                 t, p = 0.0, 1.0
             rows.append({"Experiment": exp_name,
+                         "Metric": metric,
                          "Comparison": f"Full vs {cfg_label}",
-                         "t_stat": round(t, 4), "p_value": round(p, 6),
-                         "sig_0.05": p < 0.05})
+                         "Full_mean": round(float(np.mean(full)), 3),
+                         "Other_mean": round(float(np.mean(abl)), 3)
+                         if abl is not None else float("nan"),
+                         "n_seeds": int(len(full)),
+                         "t_stat": round(float(t), 4),
+                         "p_value": round(float(p), 6),
+                         "sig_0.05": bool(p < 0.05)})
     df = pd.DataFrame(rows)
     fpath = os.path.join(cfg.RESULTS_DIR, "pvalues.csv")
     df.to_csv(fpath, index=False)
     print(f"  [Saved] {fpath}")
-    print(df.to_string(index=False))
+    if not df.empty:
+        print(df.to_string(index=False))
     return df

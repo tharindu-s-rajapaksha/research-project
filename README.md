@@ -29,10 +29,20 @@ pip install torch numpy gymnasium matplotlib seaborn pygame
 ### Usage Commands
 
 #### 1. Full Research Suite
-To run the entire ablation study (all 3 experiments across all 4 configurations) and generate the full report:
+To run the entire ablation study (all 3 experiments across all 7 configurations, over multiple
+seeds) and generate the full report:
 ```bash
-python main.py
+python main.py                 # default seeds (config.EXP_SEEDS = 3 seeds)
+python main.py --seeds 5       # run 5 independent seeds for stronger statistics
 ```
+The ablation configurations are: **Full Model, Ablated DA, Ablated NA, Ablated 5-HT, No Plasticity,
+No Modulation** (same plastic+softmax architecture with hormones clamped — the clean modulation
+control), and **Static Baseline** (classic ε-greedy DQN). Cross-seed Welch t-tests are written to
+`research_results/pvalues.csv`, with per-seed metrics in `experiment_results.csv` and a mean/std
+roll-up in `experiment_results_summary.csv`.
+
+*Note: 7 configs × seeds × 3 experiments can be slow (Experiment 3 dominates). Use `--exp N` and/or
+`--seeds 1` to scope down during development.*
 
 #### 2. Single Experiment Analysis
 To run a full ablation analysis (Full Model, Ablated NA, Ablated 5-HT, and Static Baseline) for just one specific experiment:
@@ -41,7 +51,8 @@ python main.py --exp 1   # Volatile Bandit
 python main.py --exp 2   # High-Stakes Foraging
 python main.py --exp 3   # CartPole Adaptation
 ```
-*Note: Add `--merge` to any of the above to combine results into a single chart file.*
+*Note: Add `--merge` to combine results into a single chart file, and `--seeds N` to set the number
+of independent seeds. Both flags also work on the single-experiment commands above.*
 
 #### 3. Interactive Simulation Engine
 To visualize experiments or run specific analyses. Both arguments are **required**:

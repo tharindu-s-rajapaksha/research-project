@@ -25,14 +25,18 @@ def main():
     parser = argparse.ArgumentParser(description="Multi-Neuromodulated Modular RL Suite")
     parser.add_argument("--exp", type=int, choices=[1, 2, 3], help="Only run ablation study for a specific experiment (1, 2, or 3)")
     parser.add_argument("--merge", action="store_true", help="Merge all experiment ablation charts into one file (default: separate)")
+    parser.add_argument("--seeds", type=int, default=None, help="Number of independent seeds for multi-seed statistics (default: len(EXP_SEEDS))")
     args = parser.parse_args()
+
+    seeds = (cfg.EXP_SEEDS if args.seeds is None
+             else [cfg.SEED + i for i in range(args.seeds)])
 
     print("=" * 60)
     print("  Multi-Neuromodulated Modular RL Architecture")
     print("  Research Experiment Suite")
     print("=" * 60)
     print(f"  Device:  {cfg.DEVICE}")
-    print(f"  Seed:    {cfg.SEED}")
+    print(f"  Seeds:   {seeds}")
     print(f"  Output:  {cfg.RESULTS_DIR}")
     if args.exp:
         print(f"  Target:  Experiment {args.exp}")
@@ -47,35 +51,35 @@ def main():
     start = time.time()
 
     # ── Run ablation study (specific experiment or all) ──
-    all_results = run_ablation_study(seed=cfg.SEED, exp_id=args.exp)
+    representative, metrics = run_ablation_study(seeds=seeds, exp_id=args.exp)
 
     # ── Comparative bar charts ──
     print("\n> Generating comparative bar charts...")
-    plot_comparative_bars(all_results, merge=args.merge)
+    plot_comparative_bars(metrics, merge=args.merge)
 
-    # ── Regret curves for Full Model ──
+    # ── Regret curves for Full Model (uses the representative seed-0 run) ──
     print("\n> Generating regret curves...")
-    if "Experiment_1" in all_results and "Full Model" in all_results["Experiment_1"]:
+    if "Experiment_1" in representative and "Full Model" in representative["Experiment_1"]:
         plot_regret_curve(
-            all_results["Experiment_1"]["Full Model"],
+            representative["Experiment_1"]["Full Model"],
             optimal_reward=cfg.EXP1_REWARD_MU_HI,
             exp_name="Experiment_1")
-    if "Experiment_2" in all_results and "Full Model" in all_results["Experiment_2"]:
+    if "Experiment_2" in representative and "Full Model" in representative["Experiment_2"]:
         plot_regret_curve(
-            all_results["Experiment_2"]["Full Model"],
+            representative["Experiment_2"]["Full Model"],
             optimal_reward=cfg.EXP2_SAFE_REWARD,  # Safe optimal
             exp_name="Experiment_2")
 
     # ── CSV export ──
     print("\n> Exporting CSV results...")
-    export_csv(all_results)
+    export_csv(metrics)
 
     # ── P-values ──
-    print("\n> Computing p-values (Welch's t-test)...")
-    compute_pvalues(all_results)
+    print("\n> Computing p-values (Welch's t-test across seeds)...")
+    compute_pvalues(metrics)
 
     # ── Scientific conclusions ──
-    print_scientific_conclusions(all_results)
+    print_scientific_conclusions(metrics)
 
     elapsed = time.time() - start
     print(f"\n{'='*60}")

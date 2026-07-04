@@ -12,7 +12,8 @@ import torch
 # General
 # ─────────────────────────────────────────────────────────────────────
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu") # CPU or GPU
-SEED = 42
+SEED = 42                       # Default seed for single-run (live / fast) modes
+EXP_SEEDS = [42, 43, 44]        # Independent seeds for multi-seed ablation statistics
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research_results")
 
 # ─────────────────────────────────────────────────────────────────────
@@ -52,6 +53,17 @@ ALPHA_BASE   = 1e-3             # α_base (DA)  — base learning rate
 TAU_BASE     = 1.0              # τ_base (NA)  — base softmax exploration temperature
 GAMMA_BASE   = 0.99             # γ_base (5HT) — base discount factor
 
+# Discount modulation (5-HT): γ = γ_base · (GAMMA_FLOOR_FRAC + GAMMA_MOD_RANGE·σ(5HT−B)).
+# Keeps resting γ near γ_base (≈0.94) instead of collapsing to 0.5; high 5-HT lengthens horizon.
+GAMMA_FLOOR_FRAC = 0.9          # Floor fraction of γ_base (myopic limit)
+GAMMA_MOD_RANGE  = 0.1          # Range added by serotonin (toward full γ_base)
+
+# Exploration annealing (Section 4B) — tonic exploration floor decays over training so the
+# agent can converge to exploitation; NA spikes still re-open exploration on volatility.
+TAU_ANNEAL_STEPS    = 2000      # Time constant for τ base decay
+TAU_MIN_FRAC        = 0.1       # Floor fraction of τ_base after annealing
+EPSILON_DECAY_STEPS = 2000      # Time constant for ε decay (static baseline)
+
 HIDDEN_DIM   = 128              # Hidden layer width
 REPLAY_SIZE  = 500              # Experience-replay buffer capacity (CHANGED FROM 10000 to 500)
 BATCH_SIZE   = 64               # Mini-batch size
@@ -90,11 +102,22 @@ EXP3_RECOVERY_TARGET   = 300   # Steps to consider "recovered"
 # ─────────────────────────────────────────────────────────────────────
 # Ablation Study  (Section 9)
 # ─────────────────────────────────────────────────────────────────────
+# Each config declares hormone enables (DA/NA/5HT), the worker type
+# ("plastic" = neuromodulated DQN, "static" = plain ε-greedy DQN), and whether
+# the plastic Hebbian term is active. This lets the study isolate each component
+# instead of conflating "no modulation" with "different architecture":
+#   • No Modulation = same plastic+softmax architecture, hormones clamped to
+#     baseline → isolates the neuromodulation signal itself.
+#   • No Plasticity = full modulation but Hebbian term off → isolates plasticity.
+#   • Static Baseline = the classic ε-greedy DQN control (no plasticity/softmax).
 ABLATION_CONFIGS = {
-    "Full Model":      {"DA": True,  "NA": True,  "5HT": True},
-    "Ablated NA":      {"DA": True,  "NA": False, "5HT": True},
-    "Ablated 5-HT":    {"DA": True,  "NA": True,  "5HT": False},
-    "Static Baseline": {"DA": False, "NA": False, "5HT": False},
+    "Full Model":      {"DA": True,  "NA": True,  "5HT": True,  "worker": "plastic", "plastic": True},
+    "Ablated DA":      {"DA": False, "NA": True,  "5HT": True,  "worker": "plastic", "plastic": True},
+    "Ablated NA":      {"DA": True,  "NA": False, "5HT": True,  "worker": "plastic", "plastic": True},
+    "Ablated 5-HT":    {"DA": True,  "NA": True,  "5HT": False, "worker": "plastic", "plastic": True},
+    "No Plasticity":   {"DA": True,  "NA": True,  "5HT": True,  "worker": "plastic", "plastic": False},
+    "No Modulation":   {"DA": False, "NA": False, "5HT": False, "worker": "plastic", "plastic": True},
+    "Static Baseline": {"DA": False, "NA": False, "5HT": False, "worker": "static",  "plastic": False},
 }
 
 # ─────────────────────────────────────────────────────────────────────

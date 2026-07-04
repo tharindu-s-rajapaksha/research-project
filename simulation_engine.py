@@ -438,7 +438,7 @@ class SimulationEngine:
         
         if done or self.step_i >= 500:
             self.last_ep_score = self.ep_reward
-            if self.ep_reward > 200: # Success threshold for LunarLander
+            if self.ep_reward >= cfg.EXP3_RECOVERY_TARGET:  # CartPole balance target
                 self.success_count += 1
                 
             self.plot_rewards.add_data([self.ep_reward])
@@ -696,28 +696,32 @@ def run_fast_mode(exp_id: int):
 # ---------------------------------------------------------
 # Full Ablation Runner
 # ---------------------------------------------------------
-def run_full_ablation_mode(exp_id: int):
+def run_full_ablation_mode(exp_id: int, seeds=None):
+    seeds = seeds if seeds is not None else cfg.EXP_SEEDS
     print("=" * 60)
     print(f" Running FULL ABLATION STUDY for Experiment {exp_id}")
     print("=" * 60)
-    print(" This will run all 4 configurations (Full, Ablated NA, Ablated 5-HT, Static).")
-    
+    print(f" Configurations: {list(cfg.ABLATION_CONFIGS.keys())}")
+    print(f" Seeds: {seeds}")
+
     start_time = time.time()
-    
-    # Run ablation study for the specific experiment
-    all_results = run_ablation_study(seed=cfg.SEED, exp_id=exp_id)
-    
+
+    # Run ablation study for the specific experiment across all seeds
+    representative, metrics = run_ablation_study(seeds=seeds, exp_id=exp_id)
+
     # Generate comparative plots
     print("\n> Generating comparative bar charts...")
-    plot_comparative_bars(all_results)
-    
-    # Export results
+    plot_comparative_bars(metrics)
+
+    # Export results + cross-seed p-values
     print("\n> Exporting CSV results...")
-    evaluation.export_csv(all_results)
-    
+    evaluation.export_csv(metrics)
+    print("\n> Computing p-values (Welch's t-test across seeds)...")
+    evaluation.compute_pvalues(metrics)
+
     # Print conclusions
-    print_scientific_conclusions(all_results)
-    
+    print_scientific_conclusions(metrics)
+
     print(f"Full ablation study completed in {time.time() - start_time:.2f} seconds.")
     print(f"All dashboards and comparison plots saved to: {cfg.RESULTS_DIR}")
 
@@ -730,13 +734,18 @@ if __name__ == "__main__":
                         help="Experiment to run: 1 (Bandit), 2 (Foraging), 3 (CartPole)")
     parser.add_argument("--mode", type=str, choices=["live", "fast", "ablation"], required=True,
                         help="Execution mode: live (UI), fast (background), or ablation (full analysis)")
-    
+    parser.add_argument("--seeds", type=int, default=None,
+                        help="Number of independent seeds for ablation-mode statistics (default: len(EXP_SEEDS))")
+
     args = parser.parse_args()
+
+    seeds = (cfg.EXP_SEEDS if args.seeds is None
+             else [cfg.SEED + i for i in range(args.seeds)])
 
     if args.mode == "fast":
         run_fast_mode(args.exp)
     elif args.mode == "ablation":
-        run_full_ablation_mode(args.exp)
+        run_full_ablation_mode(args.exp, seeds=seeds)
     else:
         print(f"\nStarting Live Simulation for Experiment {args.exp}...")
         print("Controls: [SPACE] Pause/Play | [UP/DOWN] Change Speed")

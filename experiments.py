@@ -10,6 +10,7 @@ Experiment 3: CartPole Physics Adaptation   (Learning Rate Test)
 """
 
 import random
+from collections import deque
 
 import numpy as np
 import gymnasium as gym
@@ -238,18 +239,28 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
                      label: str = "Full Model") -> dict:
     """Run the CartPole physics adaptation experiment.
 
-    Phase 1: Train under standard gravity (9.8) for EXP3_TRAIN_EPISODES.
-    Phase 2: At EXP3_PERTURB_EPISODE, shock the dynamics — gravity → 29.4
-             (3× default) and actuator force_mag × EXP3_FORCE_SCALE (0.5) —
-             then run EXP3_POST_EPISODES more episodes.
+    Design — "train to competence, THEN perturb" (per seed):
+      Phase 1: train under standard gravity until the agent is COMPETENT
+               (rolling mean over EXP3_COMPETENCE_WINDOW ≥ EXP3_COMPETENCE_TARGET)
+               or a training cap (EXP3_TRAIN_EPISODES) is hit.
+      Phase 2: if competent, shock the dynamics AT THAT MOMENT — gravity →
+               EXP3_NEW_GRAVITY, actuator force_mag × EXP3_FORCE_SCALE — and run
+               EXP3_POST_EPISODES more episodes, measuring recovery.
 
-    Recovery is only defined if the agent was COMPETENT before the shock
-    (pre-perturb rolling mean ≥ EXP3_COMPETENCE_TARGET); otherwise there is
-    nothing to "recover" and recovery_time is NaN.
+    Why perturb at competence instead of a fixed late episode: a vanilla DQN on
+    CartPole reliably solves the task and then, with continued training,
+    catastrophically forgets (episode length collapses back to ~10 and stays
+    there). Checking competence at a FIXED late episode lands after that
+    collapse and mislabels a solved agent as "never competent", leaving
+    recovery undefined for almost every seed. Perturbing at the competence peak
+    measures exactly what the experiment asks — recovery from a dynamics shock,
+    given the agent had actually learned the task — and is robust to the
+    post-solution collapse. If the agent never reaches competence within the
+    cap, recovery_time is NaN (flagged, not silently capped).
 
     Returns:
         dict with episode_lengths, hormones, hyperparams, recovery_time,
-        pre_competence, is_competent, label.
+        pre_competence, is_competent, perturb_episode, label.
     """
     if ablation_cfg is None:
         ablation_cfg = cfg.ABLATION_CONFIGS["Full Model"]
@@ -264,29 +275,18 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
                                replay_size=cfg.EXP3_REPLAY_SIZE)
     meta.hard_reset()
 
-    total_episodes = cfg.EXP3_TRAIN_EPISODES + cfg.EXP3_POST_EPISODES
     episode_lengths = []
     all_rewards = []
-    perturbed = False
 
-    for ep in range(total_episodes):
-        # Apply perturbation at the right episode
-        if ep == cfg.EXP3_PERTURB_EPISODE and not perturbed:
-            env.unwrapped.gravity = cfg.EXP3_NEW_GRAVITY
-            # CartPole has no friction parameter; we scale force_mag as a
-            # proxy for the changed dynamics (weaker actuator).
-            env.unwrapped.force_mag = env.unwrapped.force_mag * cfg.EXP3_FORCE_SCALE
-            perturbed = True
-
-        state, _ = env.reset(seed=seed + ep)
+    def _run_episode(ep_idx: int) -> int:
+        """Run one CartPole episode end-to-end; return its length (steps)."""
+        state, _ = env.reset(seed=seed + ep_idx)
         worker.reset_episode()
         ep_reward = 0.0
         step_count = 0
-
-        for t in range(500):  # CartPole max steps
+        for _t in range(500):  # CartPole-v1 caps at 500 steps
             hormone_signal = meta.engine.plastic_gate()  # DA-gated plasticity
-            action = worker.select_action(state,
-                                          hormone_signal=hormone_signal)
+            action = worker.select_action(state, hormone_signal=hormone_signal)
             next_state, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
 
@@ -303,25 +303,35 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
             state = next_state
             if done:
                 break
-
         episode_lengths.append(step_count)
         all_rewards.append(ep_reward)
+        return step_count
 
-    env.close()
+    # ── Phase 1: train until competent (or hit the cap) ──────────────────
+    rolling = deque(maxlen=cfg.EXP3_COMPETENCE_WINDOW)
+    is_competent = False
+    for ep in range(cfg.EXP3_TRAIN_EPISODES):
+        rolling.append(_run_episode(ep))
+        if (len(rolling) == cfg.EXP3_COMPETENCE_WINDOW
+                and float(np.mean(rolling)) >= cfg.EXP3_COMPETENCE_TARGET):
+            is_competent = True
+            break
 
-    # ── Pre-perturbation competence gate ────────────────────────────────
-    # "Recovery" is only meaningful if the agent actually solved CartPole
-    # before the shock.  Otherwise there is nothing to recover to, and the
-    # recovery_time is NaN (flagged, not silently capped) so it is excluded
-    # from the recovery statistics rather than polluting them.
-    pre_lengths = episode_lengths[:cfg.EXP3_PERTURB_EPISODE]
-    comp_window = pre_lengths[-cfg.EXP3_COMPETENCE_WINDOW:]
-    pre_competence = float(np.mean(comp_window)) if comp_window else 0.0
-    is_competent = pre_competence >= cfg.EXP3_COMPETENCE_TARGET
+    pre_competence = float(np.mean(rolling)) if rolling else 0.0
+    perturb_episode = len(episode_lengths)  # per-seed: where the shock lands
 
-    post_lengths = episode_lengths[cfg.EXP3_PERTURB_EPISODE:]
+    # ── Phase 2: perturb at the competence peak, then measure recovery ───
     if is_competent:
-        # Worst case (competent but never recovers) = full post-window.
+        env.unwrapped.gravity = cfg.EXP3_NEW_GRAVITY
+        # CartPole has no friction parameter; scaling force_mag is our proxy
+        # for the changed dynamics (weaker actuator).
+        env.unwrapped.force_mag = env.unwrapped.force_mag * cfg.EXP3_FORCE_SCALE
+
+        post_lengths = [_run_episode(perturb_episode + ep)
+                        for ep in range(cfg.EXP3_POST_EPISODES)]
+
+        # Recovery = first time 3 consecutive post-shock episodes clear the
+        # recovery bar; worst case (never recovers) = the full post-window.
         recovery_time = float(cfg.EXP3_POST_EPISODES)
         consecutive = 0
         for i, length in enumerate(post_lengths):
@@ -333,7 +343,9 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
             else:
                 consecutive = 0
     else:
-        recovery_time = float("nan")  # undefined — never competent pre-shock
+        recovery_time = float("nan")  # undefined — never competent within cap
+
+    env.close()
 
     return {
         "episode_lengths": episode_lengths,
@@ -348,6 +360,6 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
         "recovery_time": recovery_time,
         "pre_competence": pre_competence,
         "is_competent": is_competent,
-        "perturb_episode": cfg.EXP3_PERTURB_EPISODE,
+        "perturb_episode": perturb_episode,
         "label": label,
     }

@@ -22,7 +22,7 @@ SEED = 42
 # Seeds for the statistical study. Every config is run on EVERY seed, so the
 # per-seed metric vectors are paired by seed. 5 keeps a full run to ~1h; bump
 # toward 10+ for the final report (heavy: len(SEEDS)×n_configs×3 experiments).
-SEEDS = [42, 43, 44, 45, 46]
+SEEDS = [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research_results")
 
 # ─────────────────────────────────────────────────────────────────────

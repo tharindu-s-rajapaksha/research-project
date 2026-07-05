@@ -86,10 +86,13 @@ def main():
                           exp_name="Experiment_2")
 
     # ── Statistics: mean ± CI summary + paired significance tests ──
+    # Suffix per-experiment runs so successive `--exp N` calls don't overwrite
+    # each other's CSVs (a full run keeps the plain filenames).
+    tag = f"_exp{args.exp}" if args.exp else ""
     print("\n> Summarizing metrics across seeds...")
-    summarize_multiseed(all_ms)
+    summarize_multiseed(all_ms, filename=f"summary_multiseed{tag}.csv")
     print("\n> Computing paired significance tests (Full vs each config)...")
-    compute_multiseed_pvalues(all_ms)
+    compute_multiseed_pvalues(all_ms, filename=f"pvalues{tag}.csv")
 
     # ── Scientific conclusions ──
     print_scientific_conclusions_multiseed(all_ms)

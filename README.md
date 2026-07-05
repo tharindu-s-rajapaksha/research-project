@@ -81,8 +81,11 @@ Tests the agent's ability to detect shifts in reward distributions. Noradrenalin
 ### Exp 2: High-Stakes Foraging (5-HT Test)
 Tests survival and harm aversion. Serotonin (5-HT) spikes during "near-death" or high-risk scenarios to enforce a safer policy.
 
-### Exp 3: CartPole Physics Adaptation (DA Test)
-Tests the agent's ability to adapt to a sudden physics change (2× gravity, applied after a pre-training phase). Requires rapid re-learning of balancing dynamics.
+### Exp 3: Volatile Risky Foraging (CAPSTONE — all three hormones together)
+An integrative task that **fuses Exp 1 and Exp 2**: among several safe arms one is "good" and it **moves** over time (volatility → NA/DA), while a tempting arm pays well but is occasionally **lethal** (→ 5-HT). The full multi-neuromodulated agent must adapt to the moving optimum *and* resist the lethal arm at once. Headline metric: **cumulative reward** — the full model should beat the static baseline and every single-hormone ablation.
+
+### (Legacy) CartPole Physics Adaptation — secondary / negative result
+Kept via `experiments.run_experiment_cartpole` to reproduce the honest finding that DA-gated plasticity *helps* discrete re-mapping but *hurts* stable continuous control. Not part of the default suite.
 
 ---
 

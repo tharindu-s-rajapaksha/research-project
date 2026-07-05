@@ -40,8 +40,10 @@ class HormonalMetaAgent:
     """
 
     def __init__(self, enable_da: bool = True, enable_na: bool = True,
-                 enable_5ht: bool = True):
-        self.engine = HormoneEngine(enable_da, enable_na, enable_5ht)
+                 enable_5ht: bool = True,
+                 volatility_threshold: float = cfg.VOLATILITY_THRESHOLD):
+        self.engine = HormoneEngine(enable_da, enable_na, enable_5ht,
+                                    volatility_threshold=volatility_threshold)
 
         # Performance trackers
         self._death_count = 0

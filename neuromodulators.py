@@ -28,16 +28,24 @@ class HormoneEngine:
     """
 
     def __init__(self, enable_da: bool = True, enable_na: bool = True,
-                 enable_5ht: bool = True):
+                 enable_5ht: bool = True,
+                 volatility_threshold: float = cfg.VOLATILITY_THRESHOLD):
         """
         Args:
             enable_da:  If False, DA is clamped to baseline (ablation).
             enable_na:  If False, NA is clamped to baseline (ablation).
             enable_5ht: If False, 5-HT is clamped to baseline (ablation).
+            volatility_threshold: z-score the NA reward-drop detector must
+                exceed to fire. Set PER EXPERIMENT: a quiet reward stream (pure
+                bandit) needs a high bar (~3.5) so ε-greedy noise doesn't trip
+                it, whereas a stream with large intrinsic variance (the risky
+                foraging capstone, ±50/−500) needs a lower bar (~2.0) or the
+                switch-induced drop is buried under the risky-arm variance.
         """
         self.enable_da  = enable_da
         self.enable_na  = enable_na
         self.enable_5ht = enable_5ht
+        self.volatility_threshold = volatility_threshold
 
         # Current concentrations
         self.da  = cfg.HORMONE_BASELINE     # (1.0) DA: Reward Prediction Error (RPE)
@@ -163,7 +171,17 @@ class HormoneEngine:
 
         (``td_error`` is accepted for a uniform signature with the other spike
         functions but is intentionally unused — NA keys on reward, not TD.)
+
+        Catastrophic rewards (≤ RISK_PENALTY_THRESHOLD, i.e. "deaths") are
+        EXCLUDED from the volatility history: they belong to serotonin's
+        harm-aversion domain, and if left in they would dominate the reward
+        variance and mask the modest mean-shift that signals a distribution
+        switch — so NA would never fire on a task that also has a lethal
+        option (the capstone). NA therefore tracks ordinary reward volatility.
         """
+        if reward <= cfg.RISK_PENALTY_THRESHOLD:
+            return 0.0  # catastrophic event → 5-HT's job, not NA's
+
         self._reward_history.append(reward)
 
         # Warmup: need full buffers
@@ -179,8 +197,8 @@ class HormoneEngine:
         z_score = max(0.0, float(np.mean(r_baseline)) - float(np.mean(r_recent))) / \
                   (float(np.std(r_baseline)) + 1e-6)
 
-        if z_score > cfg.VOLATILITY_THRESHOLD:
-            return (z_score - cfg.VOLATILITY_THRESHOLD) * cfg.NA_SPIKE_SCALE
+        if z_score > self.volatility_threshold:
+            return (z_score - self.volatility_threshold) * cfg.NA_SPIKE_SCALE
         return 0.0
 
     @staticmethod

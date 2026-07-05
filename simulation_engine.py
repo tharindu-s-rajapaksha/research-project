@@ -26,7 +26,8 @@ import pygame
 import config as cfg
 from meta_agent import HormonalMetaAgent
 from worker import LocalRLWorker, StaticBaselineWorker
-from environments import VolatileBandit, HighStakesForaging
+from environments import (VolatileBandit, HighStakesForaging,
+                          VolatileRiskyForaging)
 import experiments
 import evaluation
 from ablation import (run_multiseed_study, plot_comparative_bars_multiseed,
@@ -221,13 +222,19 @@ class SimulationEngine:
         
         if not hasattr(self, 'ablation_flags'):
             self.ablation_flags = {"DA": True, "NA": True, "5HT": True}
-            
+
+        # Exp 3 (Volatile Risky Foraging) has a high-variance reward stream, so
+        # its NA detector needs the lower per-task volatility threshold — else NA
+        # never fires and the live demo shows it as inert (matches the batch fix).
+        vol_thresh = (cfg.VRF_VOLATILITY_THRESHOLD if self.exp_id == 3
+                      else cfg.VOLATILITY_THRESHOLD)
         self.meta = HormonalMetaAgent(
             enable_da=self.ablation_flags["DA"],
             enable_na=self.ablation_flags["NA"],
             enable_5ht=self.ablation_flags["5HT"],
+            volatility_threshold=vol_thresh,
         )
-        
+
         is_static = not self.ablation_flags["DA"] and not self.ablation_flags["NA"] and not self.ablation_flags["5HT"]
         
         if self.exp_id == 1:
@@ -274,25 +281,29 @@ class SimulationEngine:
             self.survival_steps = 0
             
         elif self.exp_id == 3:
-            self.env = gym.make("CartPole-v1", render_mode="rgb_array")
-            state_dim = self.env.observation_space.shape[0]
-            action_dim = self.env.action_space.n
+            # CAPSTONE — Volatile Risky Foraging (moving good arm + lethal arm).
+            self.env = VolatileRiskyForaging(seed=cfg.SEED)
             if is_static:
-                self.worker = StaticBaselineWorker(state_dim, action_dim,
-                                                   replay_size=cfg.EXP3_REPLAY_SIZE)
+                self.worker = StaticBaselineWorker(self.env.observation_dim, self.env.action_dim,
+                                                   replay_size=cfg.VRF_REPLAY_SIZE)
             else:
-                self.worker = LocalRLWorker(state_dim, action_dim,
-                                            replay_size=cfg.EXP3_REPLAY_SIZE)
-            self.state, _ = self.env.reset(seed=cfg.SEED)
-            self.episode_i = 0
+                self.worker = LocalRLWorker(self.env.observation_dim, self.env.action_dim,
+                                            replay_size=cfg.VRF_REPLAY_SIZE)
+            self.state = self.env.reset()
             self.step_i = 0
-            self.ep_reward = 0
-            self.perturbed = False
+            self.total_steps = cfg.VRF_TOTAL_STEPS
+            self.action = None
+            self.reward = 0
+            self.died = False
             # Live Metrics
             self.cum_reward = 0.0
-            self.success_count = 0
-            self.last_ep_score = 0.0
-            self.total_episodes = cfg.EXP3_TRAIN_EPISODES + cfg.EXP3_POST_EPISODES
+            self.death_count = 0
+            self.survival_steps = 0
+            self.optimal_count = 0
+            self.optimal_percentage = 0.0
+            self.cur_optimal = self.env.optimal_sequence[0]
+            self.risky_arm = self.env.risky_arm
+            self.switched_timer = 0
 
     def run(self):
         running = True
@@ -361,7 +372,7 @@ class SimulationEngine:
         self.plot_tau.add_data([modulation["epsilon"]])
         self.plot_gamma.add_data([modulation["gamma"]])
         
-        if self.exp_id in [1, 2]:
+        if self.exp_id in [1, 2, 3]:
             self.plot_rewards.add_data([reward])
 
     # ---------------------------------------------------------
@@ -435,43 +446,39 @@ class SimulationEngine:
         return False
 
     def _step_exp3(self):
-        if self.episode_i >= self.total_episodes:
+        # CAPSTONE — bandit-style step (moving good arm + lethal arm).
+        if self.step_i >= self.total_steps:
             return True
-            
-        if self.episode_i == cfg.EXP3_PERTURB_EPISODE and not self.perturbed:
-            self.env.unwrapped.gravity = cfg.EXP3_NEW_GRAVITY
-            self.env.unwrapped.force_mag *= cfg.EXP3_FORCE_SCALE
-            self.perturbed = True
-            
+
         hormone_signal = self.meta.engine.plastic_gate()
-        action = self.worker.select_action(self.state, hormone_signal=hormone_signal)
-        next_state, reward, terminated, truncated, _ = self.env.step(action)
-        done = terminated or truncated
-        
-        self.worker.store_transition(self.state, action, reward, next_state, float(done))
+        self.action = self.worker.select_action(self.state, hormone_signal=hormone_signal)
+        next_state, self.reward, done, _, info = self.env.step(self.action)
+        self.died = info.get("death", False)
+
+        self.worker.store_transition(self.state, self.action, self.reward, next_state, float(self.died))
         td_error = self.worker.update(hormone_signal=hormone_signal)
-        modulation = self.meta.step(td_error, reward, done)
+        modulation = self.meta.step(td_error, self.reward, self.died)
         self.worker.set_modulation(modulation["alpha"], modulation["epsilon"], modulation["gamma"], modulation["punish_gain"])
-        
-        self.ep_reward += reward
-        self.cum_reward += reward
+
+        # Update metrics
+        self.cum_reward += self.reward
+        self.cur_optimal = info["optimal_arm"]
+        if self.action == info["optimal_arm"]:
+            self.optimal_count += 1
+        self.optimal_percentage = (self.optimal_count / (self.step_i + 1)) * 100
+        self.survival_steps += 1
+        if self.died:
+            self.death_count += 1
+            self.survival_steps = 0
+            self.worker.reset_episode()
+        if info.get("switched", False):
+            self.switched_timer = 20
+        elif self.switched_timer > 0:
+            self.switched_timer -= 1
+
         self.state = next_state
         self.step_i += 1
-        
-        self._update_plots(modulation, reward)
-        
-        if done or self.step_i >= 500:
-            self.last_ep_score = self.ep_reward
-            if self.ep_reward >= cfg.EXP3_RECOVERY_TARGET:  # CartPole success bar
-                self.success_count += 1
-                
-            self.plot_rewards.add_data([self.ep_reward])
-            self.state, _ = self.env.reset()
-            self.worker.reset_episode()
-            self.episode_i += 1
-            self.step_i = 0
-            self.ep_reward = 0
-            
+        self._update_plots(modulation, self.reward)
         return False
 
     # ---------------------------------------------------------
@@ -483,9 +490,7 @@ class SimulationEngine:
         # Top Bar
         status = "FINISHED" if finished else ("PAUSED" if self.paused else "RUNNING")
         step_info = f"Step: {self.step_i}"
-        if self.exp_id == 3:
-            step_info = f"Episode: {self.episode_i} | Step: {self.step_i}"
-            
+
         bar_text = f"Exp {self.exp_id} | {status} | Speed: {self.speed} steps/sec | {step_info} | MODEL: "
         bar_surf = self.font.render(bar_text, True, C_TEXT)
         self.screen.blit(bar_surf, (10, 10))
@@ -564,8 +569,9 @@ class SimulationEngine:
         title = self.large_font.render("LIVE EVALUATION", True, (255, 200, 50))
         self.screen.blit(title, (self.metrics_rect.x + 20, self.metrics_rect.y + 15))
 
-        if self.exp_id == 1:
-            phase = sum(1 for s in cfg.EXP1_SWITCH_STEPS if self.env._step >= s)
+        if self.exp_id in (1, 3):
+            switches = cfg.EXP1_SWITCH_STEPS if self.exp_id == 1 else cfg.VRF_SWITCH_STEPS
+            phase = sum(1 for s in switches if self.env._step >= s)
             if phase > 0:
                 sw_lbl = self.large_font.render(f"PHASE {phase} !", True, (255, 50, 50))
                 self.screen.blit(sw_lbl, (self.metrics_rect.x + 20, self.metrics_rect.y + 40))
@@ -589,10 +595,10 @@ class SimulationEngine:
             ]
         elif self.exp_id == 3:
             metrics = [
-                ("Total Score", f"{self.cum_reward:.1f}"),
-                ("Success Count", f"{self.success_count}"),
-                ("Last Ep Score", f"{self.last_ep_score:.1f}"),
-                ("Status", "PERTURBED" if self.perturbed else "NORMAL")
+                ("Total Reward", f"{self.cum_reward:.1f}"),
+                ("Deaths", f"{self.death_count}"),
+                ("Optimal %", f"{self.optimal_percentage:.1f}%"),
+                ("Risk Level", "HIGH" if self.action == self.risky_arm else "LOW"),
             ]
             
         for label, val in metrics:
@@ -672,28 +678,51 @@ class SimulationEngine:
         pygame.draw.circle(self.screen, (255,255,255), (int(agent_x), int(cy)), 40, 3)
 
     def _render_story_exp3(self):
-        try:
-            frame = self.env.render()
-            if frame is not None:
-                # Resize keeping aspect ratio
-                h, w, c = frame.shape
-                aspect = w / h
-                new_h = self.story_rect.height
-                new_w = int(new_h * aspect)
-                
-                frame = np.transpose(frame, (1, 0, 2))
-                surf = pygame.surfarray.make_surface(frame)
-                surf = pygame.transform.scale(surf, (new_w, new_h))
-                
-                # Center it
-                offset_x = self.story_rect.x + (self.story_rect.width - new_w) // 2
-                self.screen.blit(surf, (offset_x, self.story_rect.y))
-        except Exception:
-            pass
-            
-        if self.perturbed:
-            alert = self.huge_font.render("GRAVITY x3 (PERTURBED)!", True, (255, 50, 50))
-            self.screen.blit(alert, (self.story_rect.x + 20, self.story_rect.y + 20))
+        # CAPSTONE — moving good arm (green) + lethal arm (red skull).
+        n_arms = self.env.n_actions
+        good = getattr(self, "cur_optimal", self.env.optimal_sequence[0])
+        risky = self.risky_arm
+        w = self.story_rect.width / n_arms
+
+        for i in range(n_arms):
+            bx = self.story_rect.x + i * w + 30
+            by = self.story_rect.y + 60
+            bw = w - 60
+            bh = self.story_rect.height - 120
+
+            # Base tile; highlight the chosen arm.
+            color = (60, 60, 80)
+            if hasattr(self, "action") and self.action == i:
+                color = (180, 180, 80)
+            pygame.draw.rect(self.screen, color, (bx, by, bw, bh))
+            border = (200, 60, 60) if i == risky else (200, 200, 200)
+            pygame.draw.rect(self.screen, border, (bx, by, bw, bh), 3)
+
+            # True-value bar: risky (red), current good (green), else meagre (grey).
+            if i == risky:
+                mu, bar_col, tag = cfg.VRF_RISKY_REWARD, (200, 70, 70), "RISKY ☠"
+            elif i == good:
+                mu, bar_col, tag = cfg.VRF_MU_HI, (80, 200, 80), f"GOOD μ={cfg.VRF_MU_HI:.0f}"
+            else:
+                mu, bar_col, tag = cfg.VRF_MU_LO, (110, 110, 130), f"μ={cfg.VRF_MU_LO:.0f}"
+            bar_h = min(1.0, mu / 55.0) * bh
+            pygame.draw.rect(self.screen, bar_col,
+                             (bx + 8, by + bh - bar_h, bw - 16, bar_h))
+
+            lbl = self.large_font.render(f"Arm {i}", True, C_TEXT)
+            self.screen.blit(lbl, (bx + bw / 2 - lbl.get_width() / 2, by - 35))
+            tag_lbl = self.font.render(tag, True, C_TEXT)
+            self.screen.blit(tag_lbl, (bx + bw / 2 - tag_lbl.get_width() / 2, by + bh + 8))
+
+        if getattr(self, "died", False):
+            pygame.draw.rect(self.screen, (255, 0, 0), self.story_rect, 5)
+            skull = self.huge_font.render("DEATH (-500)", True, (255, 50, 50))
+            self.screen.blit(skull, (self.story_rect.centerx - skull.get_width() / 2,
+                                     self.story_rect.y + 15))
+        elif getattr(self, "switched_timer", 0) > 0:
+            sw = self.huge_font.render("SWITCHED! good arm moved", True, (255, 200, 50))
+            self.screen.blit(sw, (self.story_rect.centerx - sw.get_width() / 2,
+                                  self.story_rect.y + 15))
 
 # ---------------------------------------------------------
 # Fast Mode Runner
@@ -757,7 +786,7 @@ def run_full_ablation_mode(exp_id: int):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Multi-Neuromodulated RL Simulation Engine")
     parser.add_argument("--exp", type=int, choices=[1, 2, 3], required=True,
-                        help="Experiment to run: 1 (Bandit), 2 (Foraging), 3 (CartPole)")
+                        help="Experiment to run: 1 (Bandit), 2 (Foraging), 3 (Risky Foraging capstone)")
     parser.add_argument("--mode", type=str, choices=["live", "fast", "ablation"], required=True,
                         help="Execution mode: live (UI), fast (background), or ablation (full analysis)")
     

@@ -145,7 +145,35 @@ EXP2_DEATH_PENALTY  = -500.0
 EXP2_REPLAY_SIZE    = 5000      # large → retain rare death transitions for learning
 
 # ─────────────────────────────────────────────────────────────────────
-# Experiment 3 — CartPole Physics Adaptation  (Section 7)
+# Experiment 3 — Volatile Risky Foraging  (CAPSTONE: DA + NA + 5-HT together)
+# ─────────────────────────────────────────────────────────────────────
+# Fuses Exp 1 (a moving best arm → NA/DA) with Exp 2 (a lethal high-EV arm →
+# 5-HT). Removing ANY single hormone should lower cumulative reward: NA/DA loss
+# slows re-adaptation to the moving good arm; 5-HT loss lets the agent get hooked
+# on the lethal arm and die. Cumulative reward is the integrative headline metric.
+VRF_N_SAFE_ARMS   = 5           # safe arms (one is "good", the rest meagre)
+VRF_TOTAL_STEPS   = 4_000
+VRF_SWITCH_STEPS  = [500, 1000, 1500, 2000, 2500, 3000, 3500]  # 7 switches
+VRF_MU_HI         = 10.0        # good safe arm mean
+VRF_MU_LO         = 2.0         # other safe arms mean
+VRF_SIGMA         = 1.0
+VRF_RISKY_REWARD  = 50.0        # lethal arm payout on a survive pull
+VRF_RISKY_DEATH_P = 0.10        # lethal arm death probability (true EV ≈ −5)
+VRF_DEATH_PENALTY = -500.0
+VRF_REPLAY_SIZE   = 5000        # large → retain rare death transitions (like Exp 2)
+VRF_VOLATILITY_THRESHOLD = 1.0  # NA reward-drop z-bar for THIS task. Much lower than
+                                # the pure bandit's 3.5 because the risky arm's ±50
+                                # survive rewards inflate the reward variance (the
+                                # z-score denominator), burying the 10→2 switch drop:
+                                # measured, NA fires 0×/run at 3.5, 0×/run at 2.0, and
+                                # only engages at ~1.0 (fires ~64×/run and adds ~+2000
+                                # cumulative reward vs Ablated-NA). Below 1.0 it
+                                # over-fires (665×/run at 0.6) and the benefit degrades.
+
+# ─────────────────────────────────────────────────────────────────────
+# Legacy CartPole Physics Adaptation  (secondary / negative result — not in
+# the default suite; kept to reproduce the "plasticity hurts continuous
+# control" finding via run_experiment_cartpole)
 # ─────────────────────────────────────────────────────────────────────
 EXP3_TRAIN_EPISODES    = 400    # Pre-perturbation training (300→400: give the
                                 # plastic DA-on configs more room to reach competence)

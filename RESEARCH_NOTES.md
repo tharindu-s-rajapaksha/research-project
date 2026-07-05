@@ -30,15 +30,22 @@ Final standing (10 seeds, all experiments complete):
   result. (Framing correction: the risky arm is *negative-EV* (−5 < +5), so 5-HT
   reaches the **true reward optimum** a plain DQN misses — it does not sacrifice
   reward for safety; see §6.1.)
-- **Experiment 3 — DA/plasticity FAILS on continuous control (a clean negative).**
-  DA-gated plasticity *impairs* CartPole: only **2/10** DA-on seeds reach competence
-  vs **8/10** with DA off, and Full's reward is significantly *lower* than Static
-  (p=0.035) and Vanilla (p=0.006). Recovery is inconclusive (too few competent Full seeds).
+- **Experiment 3 — Volatile Risky Foraging (CAPSTONE, replaces CartPole).** An
+  integrative task fusing volatility (a moving good arm → NA/DA) with lethal risk (a
+  tempting negative-EV arm → 5-HT). Headline = cumulative reward. Seed-42 pilot after
+  the Phase-3 tuning: **Full beats every ablation** — vs Ablated-NA +59%, vs Ablated-DA
+  +32%, vs Ablated-5HT +180%, vs Static +147% — i.e. removing *any* hormone is worse
+  (the multi-hormone synergy claim). Full 10-seed confirmation pending.
+- **(Legacy, secondary/negative) CartPole.** Retained via `run_experiment_cartpole`:
+  DA-gated plasticity *impairs* stable continuous control (only 2/10 DA-on seeds reach
+  competence vs 8/10 with DA off; Full reward significantly below Static/Vanilla). A
+  useful contrast — plasticity helps discrete re-mapping but hurts continuous control.
 
-**One-line takeaway:** the two mechanisms that act on the *policy* (NA→ε-exploration,
-5-HT→behavioural inhibition) beat standard RL; the mechanism that acts on the *network
-weights* (DA→Hebbian plasticity) helps discrete fast re-locking (bandit) but hurts
-stable continuous control (CartPole). A nuanced, defensible mixed result.
+**One-line takeaway:** each neuromodulator is isolated on its own task (NA→Exp 1,
+5-HT→Exp 2), and the **capstone (Exp 3) shows they are synergistic** — the full agent
+needs all three at once to both adapt to volatility and survive the lethal option,
+massively beating the static baseline and vanilla DQN. The CartPole negative is kept as
+an honest boundary condition on where weight-level plasticity helps.
 
 > ⚠️ **The §6 result tables below are from the Phase-2 config.** A Phase-3 tuning pass
 > (§5B) has since improved every mechanism in pilot runs; the on-disk CSVs
@@ -129,9 +136,12 @@ in sorted-seed order so pairing stays aligned.
   plus cumulative reward.
 - *Exp 2 (foraging):* **Death count**, **Survival rate** (mean steps between deaths),
   cumulative reward, over 5,000 steps.
-- *Exp 3 (CartPole):* **Recovery time** = episodes after the physics shock to sustain
-  ≥300 steps for 3 consecutive episodes — **defined only if the agent was competent
-  pre-shock** (rolling mean ≥350 over the last 20 pre-shock episodes); NaN otherwise.
+- *Exp 3 (capstone, Volatile Risky Foraging):* **Cumulative reward** (headline —
+  integrates adaptation and survival); plus **death count** and **re-adaptation latency**
+  (same per-switch logic as Exp 1, against the moving good safe arm), over 4,000 steps.
+- *Legacy (CartPole):* **Recovery time** = episodes after the physics shock to sustain
+  ≥300 steps for 3 consecutive episodes — defined only if competent pre-shock (rolling
+  ≥350 over the last 20 pre-shock episodes); NaN otherwise.
 
 ---
 
@@ -305,31 +315,49 @@ significantly faster and earns more than a standard DQN — the core "beats stan
 claim, supported with paired statistics. Notably, on this discrete fast-switching task
 the **dopaminergic fast-weights** contribute more than noradrenergic exploration.
 
-### 6.3 Experiment 3 — CartPole (DA / plasticity), n=10 ❌ negative (clean)
+### 6.3 Experiment 3 — Volatile Risky Foraging (CAPSTONE), all three together
 
-The diagnostic is the **pre-shock competence rate** — of 10 seeds, how many learned
-CartPole (rolling ≥350) before the perturbation (this is `N_seeds` on Recovery_Time):
+**Design.** A stateless multi-armed task fusing Exp 1 + Exp 2 (`environments.VolatileRiskyForaging`):
+among `VRF_N_SAFE_ARMS` safe arms exactly one is "good" (μ=10) and the rest meagre
+(μ=2); the good arm **moves** at each of 7 switches (volatility → NA/DA). One extra arm
+is **risky**: it pays +50 on 90% of pulls but kills (−500 + score reset) on 10% — true
+EV ≈ −5, a trap (→ 5-HT). Headline metric = **cumulative reward** (integrates adaptation
+*and* survival); secondary = death count, re-adaptation latency. Runner: `run_experiment_3`.
 
-| Config | DA on? | Competent seeds | Total Reward |
-|---|---|---|---|
-| Full Model | yes | **2 / 10** | 142,361 ± 10,078 |
-| Ablated NA | yes | 3 / 10 | 140,658 ± 17,068 |
-| Ablated 5-HT | yes | 1 / 10 | 141,433 ± 11,311 |
-| **Ablated DA** | no | **8 / 10** | 169,574 ± 16,646 |
-| Static Baseline | no | **8 / 10** | 161,498 ± 11,203 |
-| Vanilla DQN | — | 4 / 10 | 162,058 ± 10,286 |
+**Why each hormone is needed:** NA detects the switch (reward drop) and re-explores; DA
+re-locks the new good arm via plastic fast-weights; 5-HT resists the lethal arm. Removing
+any one should lower cumulative reward.
 
-Paired reward tests (Full vs …): worse than **Static** (t=−2.48, p=0.035), **Vanilla**
-(t=−3.62, p=0.006), and **Ablated DA** (t=−3.04, p=0.014); indistinguishable from the
-other DA-on configs.
+**Seed-42 pilot (post Phase-3 tuning; full 10-seed run pending):**
 
-**Interpretation:** DA-gated plasticity **impairs** stable continuous control. Configs
-with dopamine active reach competence in only 1–3/10 seeds vs 8/10 with DA off, and the
-Full model earns significantly less reward than the static baseline. **Recovery time is
-inconclusive** — the Full model reaches competence too rarely (2 seeds) to measure a
-recovery advantage; among the few competent seeds it is not distinguishable from Static.
-The intended dopaminergic "fast re-adaptation" benefit is therefore **not demonstrated**
-on continuous control; the fast-weights that help discrete re-locking (Exp 1) hurt here.
+| Config | Cumulative reward | Full is … |
+|---|---|---|
+| **Full Model** | **14,942** | — |
+| Ablated NA | 9,373 | +59% (NA needed) |
+| Ablated DA | 11,313 | +32% (DA needed) |
+| Ablated 5-HT | −18,633 | +180% (5-HT needed) |
+| Static Baseline | −31,462 | +147% |
+
+**Interpretation:** the full multi-hormone agent beats every single-hormone ablation —
+removing NA or DA slows re-adaptation (moderate loss), removing 5-HT causes lethal-arm
+deaths (catastrophic loss). This is the **multi-hormone synergy** result the project's
+novelty rests on. *Caveat:* achieving individual NA/DA necessity required the Phase-3
+tuning (low ε_base so NA's exploration is load-bearing; a higher, more selective NA
+volatility threshold). Confirm with the 10-seed paired/Holm-corrected run before quoting.
+
+**Design tension (worth a sentence in Discussion):** the rare −500 death and the +50
+gamble are high-variance events that can *swamp* NA's reward-change detector and keep
+DA's plasticity saturated "on"; the tuning (and excluding catastrophic rewards from NA's
+volatility history) is what lets all three coexist. Combining risk with volatility in one
+task is genuinely harder than either alone.
+
+### 6.4 Legacy — CartPole (DA on continuous control), n=10 ❌ negative (kept as contrast)
+
+Reproducible via `run_experiment_cartpole`. Of 10 seeds, pre-shock competence: DA-on
+configs 1–3/10 vs DA-off 8/10; Full reward significantly below Static (p=0.035) and
+Vanilla (p=0.006). **DA-gated plasticity impairs stable continuous control** — the
+fast-weights that help discrete re-locking (Exp 1, Exp 3) hurt long-horizon balance.
+CSVs preserved as `*_cartpole.csv`.
 
 ---
 

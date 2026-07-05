@@ -162,3 +162,101 @@ class HighStakesForaging:
             self._cumulative / 1000.0,          # Normalized score
             self._steps_since_death / 500.0,    # Normalized survival
         ], dtype=np.float32)
+
+
+class VolatileRiskyForaging:
+    """Capstone task (Experiment 3) — fuses volatility (Exp 1) with lethal
+    risk (Exp 2) so that ALL THREE neuromodulators are needed at once.
+
+    Arms 0..n_safe-1 are SAFE: exactly one is "good" (μ_hi), the rest are
+    meagre (μ_lo).  The good safe arm MOVES at each switch (volatility).
+    Arm n_safe is the RISKY arm: it pays μ_risky on most pulls but has a
+    p_death chance of Death (death_penalty + score reset).  Because a rare
+    −500 outweighs the frequent +50, the risky arm's true EV is NEGATIVE — a
+    trap that a greedy agent gets hooked on.
+
+    Necessary role of each hormone (removing any one → worse cumulative reward):
+        • NA  — detect the switch (reward drops) and re-explore.
+        • DA  — rapidly re-lock the NEW good safe arm (plastic fast-weights).
+        • 5-HT — resist the tempting lethal arm (behavioural inhibition).
+
+    Observation: one-hot of the last action (dim = n_safe + 1).
+    """
+
+    def __init__(self, seed: int = cfg.SEED):
+        self.n_safe = cfg.VRF_N_SAFE_ARMS
+        self.risky_arm = self.n_safe               # lethal arm = last index
+        self.n_actions = self.n_safe + 1
+        self.switch_steps = sorted(cfg.VRF_SWITCH_STEPS)
+        self.rng = np.random.RandomState(seed)
+        self.sigma = cfg.VRF_SIGMA
+
+        # Sequence of "good safe arm" to cycle through (a fixed permutation of
+        # the safe arms), extended to cover every phase.
+        base = [0, 2, 4, 1, 3][:self.n_safe] or list(range(self.n_safe))
+        self.optimal_sequence = list(base)
+        while len(self.optimal_sequence) <= len(self.switch_steps):
+            self.optimal_sequence.extend(base)
+
+        self._step = 0
+        self._cumulative = 0.0
+        self._steps_since_death = 0
+        self._death_count = 0
+        self._state = np.zeros(self.n_actions, dtype=np.float32)
+
+    @property
+    def observation_dim(self) -> int:
+        return self.n_actions
+
+    @property
+    def action_dim(self) -> int:
+        return self.n_actions
+
+    def reset(self) -> np.ndarray:
+        self._step = 0
+        self._cumulative = 0.0
+        self._steps_since_death = 0
+        self._death_count = 0
+        self._state = np.zeros(self.n_actions, dtype=np.float32)
+        return self._state.copy()
+
+    def step(self, action: int):
+        """Execute one pull. Returns (state, reward, done, truncated, info)."""
+        # Current phase → which safe arm is good right now.
+        phase = sum(1 for s in self.switch_steps if self._step >= s)
+        good_arm = self.optimal_sequence[phase]
+
+        death = False
+        if action == self.risky_arm:
+            if self.rng.random() < cfg.VRF_RISKY_DEATH_P:
+                reward = cfg.VRF_DEATH_PENALTY
+                self._cumulative = 0.0          # reset accumulated score
+                self._death_count += 1
+                death = True
+            else:
+                reward = float(self.rng.normal(cfg.VRF_RISKY_REWARD, self.sigma))
+                self._cumulative += reward
+        else:
+            mu = cfg.VRF_MU_HI if action == good_arm else cfg.VRF_MU_LO
+            reward = float(self.rng.normal(mu, self.sigma))
+            self._cumulative += reward
+
+        # State: one-hot of last action.
+        self._state = np.zeros(self.n_actions, dtype=np.float32)
+        self._state[action] = 1.0
+
+        self._step += 1
+        self._steps_since_death = 0 if death else self._steps_since_death + 1
+        done = self._step >= cfg.VRF_TOTAL_STEPS
+
+        info = {
+            "step": self._step,
+            "switched": self._step in self.switch_steps,
+            "optimal_arm": good_arm,        # the good SAFE arm (never the risky one)
+            "risky_arm": self.risky_arm,
+            "phase": phase,
+            "death": death,
+            "cumulative": self._cumulative,
+            "death_count": self._death_count,
+        }
+        return self._state.copy(), reward, done, False, info

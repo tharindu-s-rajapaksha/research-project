@@ -6,7 +6,8 @@ data needed for evaluation and visualization.
 
 Experiment 1: Volatile Multi-Armed Bandit  (NA Test)
 Experiment 2: High-Stakes Foraging         (5-HT Test)
-Experiment 3: CartPole Physics Adaptation   (Learning Rate Test)
+Experiment 3: Volatile Risky Foraging      (CAPSTONE — DA + NA + 5-HT together)
+Legacy:       CartPole Physics Adaptation  (secondary / negative result)
 """
 
 import random
@@ -19,7 +20,8 @@ import torch
 import config as cfg
 from meta_agent import HormonalMetaAgent
 from worker import LocalRLWorker, StaticBaselineWorker
-from environments import VolatileBandit, HighStakesForaging
+from environments import (VolatileBandit, HighStakesForaging,
+                          VolatileRiskyForaging)
 
 
 def _seed_all(seed: int):
@@ -37,7 +39,8 @@ def _seed_all(seed: int):
 
 
 def _make_agent(state_dim: int, action_dim: int, ablation_cfg: dict,
-                replay_size: int = cfg.REPLAY_SIZE):
+                replay_size: int = cfg.REPLAY_SIZE,
+                volatility_threshold: float = cfg.VOLATILITY_THRESHOLD):
     """Factory: build Meta-Agent + Worker pair based on ablation config.
 
     All configurations use the SAME plastic ``LocalRLWorker`` so the only
@@ -55,6 +58,7 @@ def _make_agent(state_dim: int, action_dim: int, ablation_cfg: dict,
         enable_da=ablation_cfg["DA"],
         enable_na=ablation_cfg["NA"],
         enable_5ht=ablation_cfg["5HT"],
+        volatility_threshold=volatility_threshold,
     )
     if ablation_cfg.get("vanilla", False):
         worker = StaticBaselineWorker(state_dim, action_dim,
@@ -233,10 +237,126 @@ def run_experiment_2(ablation_cfg: dict = None, seed: int = cfg.SEED,
 
 
 # ======================================================================
-# Experiment 3 — CartPole Physics Adaptation (Section 7)
+# Experiment 3 — Volatile Risky Foraging (CAPSTONE: DA + NA + 5-HT together)
 # ======================================================================
 def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
                      label: str = "Full Model") -> dict:
+    """Capstone experiment — the moving good arm (Exp 1) fused with the lethal
+    high-EV arm (Exp 2), so all three neuromodulators are needed at once.
+
+    Prediction: the Full model (all three) achieves the highest cumulative
+    reward; removing NA or DA slows re-adaptation to the moving good arm, and
+    removing 5-HT lets the agent get hooked on the lethal arm and die. Thus
+    removing ANY single hormone is worse — the multi-hormone synergy claim.
+
+    Returns:
+        dict with rewards, actions, cumulative_rewards, death_events,
+        survival_steps, adaptation_latency, death_count, total_reward, hormones.
+    """
+    if ablation_cfg is None:
+        ablation_cfg = cfg.ABLATION_CONFIGS["Full Model"]
+
+    _seed_all(seed)
+
+    env = VolatileRiskyForaging(seed=seed)
+    meta, worker = _make_agent(env.observation_dim, env.action_dim,
+                               ablation_cfg, replay_size=cfg.VRF_REPLAY_SIZE,
+                               volatility_threshold=cfg.VRF_VOLATILITY_THRESHOLD)
+    meta.hard_reset()
+
+    state = env.reset()
+    rewards, actions, optimal_arms = [], [], []
+    cumulative, deaths, survival_steps = [], [], []
+    steps_since_death = 0
+
+    for step_i in range(cfg.VRF_TOTAL_STEPS):
+        hormone_signal = meta.engine.plastic_gate()  # DA-gated plasticity
+        action = worker.select_action(state, hormone_signal=hormone_signal)
+        next_state, reward, done, _, info = env.step(action)
+
+        worker.store_transition(state, action, reward, next_state,
+                                float(info.get("death", False)))
+        td_error = worker.update(hormone_signal=hormone_signal)
+
+        modulation = meta.step(td_error, reward, info.get("death", False))
+        worker.set_modulation(modulation["alpha"], modulation["epsilon"],
+                              modulation["gamma"], modulation["punish_gain"])
+
+        rewards.append(reward)
+        actions.append(action)
+        optimal_arms.append(info["optimal_arm"])
+        cumulative.append(info.get("cumulative", 0.0))
+        steps_since_death += 1
+
+        if info.get("death", False):
+            deaths.append(step_i)
+            survival_steps.append(steps_since_death)
+            steps_since_death = 0
+            worker.reset_episode()
+
+        state = next_state
+
+    if not deaths:
+        survival_steps.append(cfg.VRF_TOTAL_STEPS)
+
+    # ── Re-adaptation latency to the new good SAFE arm (per switch) ──────
+    # Reuses the Exp 1 logic: steps to re-lock (LOCK_N consecutive pulls) onto
+    # the arm that is optimal in the new phase. An agent hooked on the lethal
+    # arm never locks the safe optimum → worst-case latency, correctly.
+    LOCK_N = 5
+    switch_steps = sorted(cfg.VRF_SWITCH_STEPS)
+    phase_bounds = switch_steps + [cfg.VRF_TOTAL_STEPS]
+    per_switch_latency = []
+    for k, s_start in enumerate(switch_steps):
+        if s_start >= len(actions):
+            continue
+        s_end = min(phase_bounds[k + 1], len(actions))
+        target_arm = optimal_arms[s_start]
+        latency = s_end - s_start
+        consecutive = 0
+        for j in range(s_start, s_end):
+            if actions[j] == target_arm:
+                consecutive += 1
+                if consecutive >= LOCK_N:
+                    latency = (j - LOCK_N + 1) - s_start
+                    break
+            else:
+                consecutive = 0
+        per_switch_latency.append(latency)
+
+    adaptation_latency = (float(np.mean(per_switch_latency))
+                          if per_switch_latency else 0.0)
+
+    return {
+        "rewards": rewards,
+        "actions": actions,
+        "optimal_arms": optimal_arms,
+        "cumulative_rewards": cumulative,
+        "death_events": deaths,
+        "survival_steps": survival_steps,
+        "hormones_da": list(meta.engine.history_da),
+        "hormones_na": list(meta.engine.history_na),
+        "hormones_ht": list(meta.engine.history_ht),
+        "hormones_da_eff": list(meta.engine.history_da_eff),
+        "alpha": list(meta.history_alpha),
+        "epsilon": list(meta.history_epsilon),
+        "gamma": list(meta.history_gamma),
+        "adaptation_latency": adaptation_latency,
+        "per_switch_latency": per_switch_latency,
+        "death_count": len(deaths),
+        "total_reward": sum(rewards),
+        "risky_arm": env.risky_arm,
+        "n_safe": env.n_safe,
+        "switch_steps": switch_steps,
+        "label": label,
+    }
+
+
+# ======================================================================
+# Legacy — CartPole Physics Adaptation (secondary / negative result)
+# ======================================================================
+def run_experiment_cartpole(ablation_cfg: dict = None, seed: int = cfg.SEED,
+                            label: str = "Full Model") -> dict:
     """Run the CartPole physics adaptation experiment.
 
     Design — "train to competence, THEN perturb" (per seed):

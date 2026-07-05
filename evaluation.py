@@ -148,11 +148,85 @@ def plot_experiment_2(results: dict, suffix: str = ""):
 
 
 def plot_experiment_3(results: dict, suffix: str = ""):
-    """4-panel dashboard for Exp 3 — CartPole."""
+    """4-panel dashboard for Exp 3 — Volatile Risky Foraging (capstone)."""
+    _ensure_dir()
+    label = results["label"]
+    switch_steps = results.get("switch_steps", cfg.VRF_SWITCH_STEPS)
+    n_actions = results.get("n_safe", cfg.VRF_N_SAFE_ARMS) + 1
+    risky_arm = results.get("risky_arm", cfg.VRF_N_SAFE_ARMS)
+    fig, axes = plt.subplots(2, 2, figsize=cfg.FIG_SIZE)
+    fig.suptitle(f"Experiment 3 — Volatile Risky Foraging  [{label}]",
+                 fontsize=16, fontweight="bold")
+    steps = np.arange(len(results["rewards"]))
+
+    # Panel 1: cumulative reward + rolling avg, with switch + death markers
+    ax = axes[0, 0]
+    ax.plot(steps, np.cumsum(results["rewards"]), alpha=0.35,
+            label="Cumulative", color="steelblue")
+    ax.plot(steps, _rolling(results["rewards"]), lw=2,
+            label=f"{cfg.ROLLING_WINDOW}-step avg", color="navy")
+    for s in switch_steps:
+        ax.axvline(s, color="red", ls="--", alpha=0.7)
+    for d in results.get("death_events", []):
+        ax.axvline(d, color="black", alpha=0.25, lw=0.5)
+    ax.set(xlabel="Step", ylabel="Reward",
+           title=f"Reward Dynamics (Deaths={results.get('death_count', 0)})")
+    ax.legend(fontsize=8)
+    ax.grid(True, linestyle="--", alpha=0.6)
+
+    # Panel 2: hormones
+    ax = axes[0, 1]
+    h = np.arange(len(results["hormones_da"]))
+    ax.plot(h, results["hormones_da_eff"], label="DA(eff)", color="gold")
+    ax.plot(h, results["hormones_na"], label="NA", color="crimson")
+    ax.plot(h, results["hormones_ht"], label="5-HT", color="seagreen")
+    for s in switch_steps:
+        ax.axvline(s, color="red", ls="--", alpha=0.4)
+    ax.set(xlabel="Step", ylabel="Conc.", title="Neuromodulator Levels")
+    ax.legend(fontsize=8)
+
+    # Panel 3: hyperparameters
+    ax = axes[1, 0]
+    hp = np.arange(len(results["alpha"]))
+    ax.plot(hp, results["alpha"], label="α", color="purple")
+    ax.plot(hp, results["epsilon"], label="ε", color="orange")
+    ax.plot(hp, results["gamma"], label="γ", color="teal")
+    for s in switch_steps:
+        ax.axvline(s, color="red", ls="--", alpha=0.4)
+    ax.set(xlabel="Step", ylabel="Value", title="Hyperparameter Dynamics")
+    ax.legend(fontsize=8)
+
+    # Panel 4: action distribution (risky arm row highlighted)
+    ax = axes[1, 1]
+    actions = np.array(results["actions"])
+    ws = 50
+    nw = max(1, len(actions) // ws)
+    hist = np.zeros((n_actions, nw))
+    for w in range(nw):
+        c = actions[w * ws:(w + 1) * ws]
+        for a in range(n_actions):
+            hist[a, w] = np.sum(c == a) / ws
+    ylabels = [f"Arm {i}" for i in range(n_actions)]
+    ylabels[risky_arm] = f"Arm {risky_arm} ☠"
+    sns.heatmap(hist, ax=ax, cmap="YlOrRd", yticklabels=ylabels,
+                cbar_kws={"label": "Freq"})
+    for s in switch_steps:
+        ax.axvline(s // ws, color="cyan", lw=1.5, ls="--")
+    ax.set(xlabel=f"Window ({ws} steps)", title="Action Distribution (☠ = lethal)")
+
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    fname = os.path.join(cfg.RESULTS_DIR, f"exp3_dashboard{suffix}.png")
+    fig.savefig(fname, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  [Saved] {fname}")
+
+
+def plot_experiment_cartpole(results: dict, suffix: str = ""):
+    """4-panel dashboard for the LEGACY CartPole experiment."""
     _ensure_dir()
     label = results["label"]
     fig, axes = plt.subplots(2, 2, figsize=cfg.FIG_SIZE)
-    fig.suptitle(f"Experiment 3 — CartPole Adaptation  [{label}]",
+    fig.suptitle(f"Legacy — CartPole Adaptation  [{label}]",
                  fontsize=16, fontweight="bold")
     eps = np.arange(len(results["episode_lengths"]))
 

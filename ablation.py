@@ -64,11 +64,11 @@ def run_ablation_study(seed: int = cfg.SEED, exp_id: int = None) -> dict:
 
         # Experiment 3
         if exp_id is None or exp_id == 3:
-            print(f"  > Running Experiment 3 (CartPole Adaptation)...")
+            print(f"  > Running Experiment 3 (Volatile Risky Foraging)...")
             r3 = run_experiment_3(ablation_cfg=abl_cfg, seed=seed, label=config_label)
             all_results["Experiment_3"][config_label] = r3
             plot_experiment_3(r3, suffix=sfx)
-            print(f"    Recovery Time: {r3['recovery_time']} episodes")
+            print(f"    Deaths: {r3['death_count']}, Total Reward: {r3['total_reward']:.1f}")
 
     return all_results
 
@@ -181,15 +181,14 @@ def plot_comparative_bars_multiseed(multiseed_results: dict,
                 "#f39c12", "#1abc9c", "#34495e"]
     colors = [_palette[i % len(_palette)] for i in range(len(configs))]
 
-    # (metric, y-label, title stem). All three headline metrics are
-    # "lower is better", so we say so explicitly on the chart — a tall bar
-    # here is a WORSE agent, which is easy to misread otherwise.
+    # (metric, y-label, title stem). Direction differs per metric, so the
+    # y-label states it explicitly and the ★best marker respects _LOWER_IS_BETTER.
     _metric_for = {"Experiment_1": ("Adaptation_Latency", "Steps  (↓ better)",
                                     "Exp 1: Adaptation Latency"),
                    "Experiment_2": ("Death_Count", "Deaths  (↓ better)",
                                     "Exp 2: Death Count"),
-                   "Experiment_3": ("Recovery_Time", "Episodes  (↓ better)",
-                                    "Exp 3: Recovery Time")}
+                   "Experiment_3": ("Total_Reward", "Cumulative reward  (↑ better)",
+                                    "Exp 3: Cumulative Reward (capstone)")}
     active = [k for k in multiseed_results if multiseed_results[k]
               and k in _metric_for]
     if not active:
@@ -197,6 +196,7 @@ def plot_comparative_bars_multiseed(multiseed_results: dict,
 
     def draw(ax, exp_key):
         metric, ylab, title = _metric_for[exp_key]
+        lower_better = metric in _LOWER_IS_BETTER
         means, errs = [], []
         for c in configs:
             m, ci, _ = _agg_metric(multiseed_results[exp_key].get(c, []), metric)
@@ -204,10 +204,13 @@ def plot_comparative_bars_multiseed(multiseed_results: dict,
             errs.append(0.0 if np.isnan(ci) else ci)
         bars = ax.bar(configs, means, yerr=errs, capsize=4, color=colors)
         ax.set_ylabel(ylab)
-        # Mark the best (lowest, since all three are lower-is-better) config.
+        # Mark the best config, respecting the metric's direction.
         valid = [(i, m) for i, m in enumerate(means) if not np.isnan(m)]
-        best_i = min(valid, key=lambda t: t[1])[0] if valid else None
-        ax.set_title(f"{title}   (lower is better)")
+        if valid:
+            best_i = (min if lower_better else max)(valid, key=lambda t: t[1])[0]
+        else:
+            best_i = None
+        ax.set_title(title)
         ax.tick_params(axis="x", rotation=25)
         for j, (bar, m) in enumerate(zip(bars, means)):
             if np.isnan(m):
@@ -276,7 +279,9 @@ def print_scientific_conclusions_multiseed(multiseed_results: dict):
 
     line("Experiment_1", "Adaptation_Latency", "Full Model", "Ablated NA", "steps")
     line("Experiment_2", "Death_Count", "Full Model", "Ablated 5-HT", "deaths")
-    line("Experiment_3", "Recovery_Time", "Full Model", "Static Baseline", "episodes")
+    # Capstone: removing ANY single hormone should lower cumulative reward.
+    for other in ["Ablated NA", "Ablated DA", "Ablated 5-HT", "Static Baseline"]:
+        line("Experiment_3", "Total_Reward", "Full Model", other, "reward")
     print()
 
 

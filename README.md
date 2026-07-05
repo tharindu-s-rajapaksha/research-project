@@ -6,13 +6,21 @@ A Bio-inspired Reinforcement Learning framework implementing dynamic neuromodula
 
 This project implements a **Multi-Neuromodulated Modular RL Architecture** designed to mimic biological learning mechanisms in the brain. Unlike traditional RL agents with static hyperparameters, this architecture uses a **Hormonal Meta-Agent** to dynamically regulate learning based on environmental cues.
 
-### Key Components:
-- **Hormone Engine**: Simulates the dynamics of three key neuromodulators:
-    - **Dopamine (DA)**: Encodes TD-error and scales the three-factor Hebbian learning rule.
-    - **Noradrenaline (NA)**: Responds to environmental volatility, increasing exploration and learning rates during shifts.
-    - **Serotonin (5-HT)**: Responds to high-risk/aversive events, increasing harm aversion and survival probability.
-- **Differentiable Plasticity**: Uses a `NeuromodulatedLinear` layer with per-synapse Hebbian eligibility traces, allowing for rapid weight adaptation beyond standard gradient descent.
-- **Hormonal Meta-Agent**: The "conductor" that monitors performance and modulates $\alpha$ (learning rate), $\epsilon$ (ε-greedy exploration rate), $\gamma$ (discount factor), and a 5-HT loss-aversion gain in real-time.
+### Hormone Engine (Section 3)
+Three neuromodulators with homeostatic spike-and-decay dynamics:
+- **Dopamine (DA)**: TD-error → plasticity gate (0 at rest, rises on surprise)
+- **Noradrenaline (NA)**: Reward-drop detector → ε-greedy exploration rate (0.01–0.5)
+- **Serotonin (5-HT)**: Aversive events → loss aversion gain + behavioral inhibition
+
+### Meta-Agent (Section 4B)
+Maps hormone levels to real-time hyperparameter modulation:
+- α (learning rate): DA-driven surprise boost (capped 2×)
+- ε (exploration): NA-driven rate (ε_base=0.01 → ε_max=0.5)
+- γ (discount): 5-HT-driven horizon (γ_base=0.99 → γ_max=0.999)
+- Harm-aversion gain: 5-HT multiplier (1 → 4 on losses) + behavioural-inhibition penalty (weight 5)
+
+### Worker (Section 2B)
+`LocalRLWorker`: ε-greedy DQN with differentiable Hebbian plasticity (`NeuromodulatedLinear`).
 
 ---
 
@@ -26,21 +34,20 @@ Ensure you have Python 3.8+ installed. Install the required dependencies:
 pip install torch numpy gymnasium matplotlib seaborn pygame
 ```
 
-### Usage Commands
+## Usage Commands
 
-#### 1. Full Research Suite
-To run the entire ablation study (all 3 experiments across all 4 configurations) and generate the full report:
+### Full Multi-Seed Study (10 seeds, all configs, parallel)
 ```bash
-python main.py
-```
+# All 3 experiments
+python main.py --workers 12
 
-#### 2. Single Experiment Analysis
-To run a full ablation analysis (Full Model, Ablated NA, Ablated 5-HT, and Static Baseline) for just one specific experiment:
-```bash
-python main.py --exp 1   # Volatile Bandit
-python main.py --exp 2   # High-Stakes Foraging
-python main.py --exp 3   # CartPole Adaptation
+# Single experiment (outputs: summary_multiseed_exp{N}.csv, pvalues_exp{N}.csv)
+python main.py --exp 1 --workers 12
+python main.py --exp 2 --workers 12
+python main.py --exp 3 --workers 12
 ```
+Workers run on CPU by default (faster for tiny nets than GPU). Results: `research_results/*.csv`, dashboards, regret curves.
+
 *Note: Add `--merge` to any of the above to combine results into a single chart file.*
 
 #### 3. Interactive Simulation Engine
@@ -74,8 +81,8 @@ Tests the agent's ability to detect shifts in reward distributions. Noradrenalin
 ### Exp 2: High-Stakes Foraging (5-HT Test)
 Tests survival and harm aversion. Serotonin (5-HT) spikes during "near-death" or high-risk scenarios to enforce a safer policy.
 
-### Exp 3: CartPole Physics Adaptation (DA/NA Test)
-Tests the agent's ability to adapt to sudden physical changes (e.g., 3x gravity). Requires rapid re-learning of balancing dynamics.
+### Exp 3: CartPole Physics Adaptation (DA Test)
+Tests the agent's ability to adapt to a sudden physics change (2× gravity, applied after a pre-training phase). Requires rapid re-learning of balancing dynamics.
 
 ---
 

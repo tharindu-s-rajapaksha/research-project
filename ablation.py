@@ -181,11 +181,14 @@ def plot_comparative_bars_multiseed(multiseed_results: dict,
                 "#f39c12", "#1abc9c", "#34495e"]
     colors = [_palette[i % len(_palette)] for i in range(len(configs))]
 
-    _metric_for = {"Experiment_1": ("Adaptation_Latency", "Steps",
+    # (metric, y-label, title stem). All three headline metrics are
+    # "lower is better", so we say so explicitly on the chart — a tall bar
+    # here is a WORSE agent, which is easy to misread otherwise.
+    _metric_for = {"Experiment_1": ("Adaptation_Latency", "Steps  (↓ better)",
                                     "Exp 1: Adaptation Latency"),
-                   "Experiment_2": ("Death_Count", "Deaths",
+                   "Experiment_2": ("Death_Count", "Deaths  (↓ better)",
                                     "Exp 2: Death Count"),
-                   "Experiment_3": ("Recovery_Time", "Episodes",
+                   "Experiment_3": ("Recovery_Time", "Episodes  (↓ better)",
                                     "Exp 3: Recovery Time")}
     active = [k for k in multiseed_results if multiseed_results[k]
               and k in _metric_for]
@@ -201,14 +204,22 @@ def plot_comparative_bars_multiseed(multiseed_results: dict,
             errs.append(0.0 if np.isnan(ci) else ci)
         bars = ax.bar(configs, means, yerr=errs, capsize=4, color=colors)
         ax.set_ylabel(ylab)
-        ax.set_title(title)
+        # Mark the best (lowest, since all three are lower-is-better) config.
+        valid = [(i, m) for i, m in enumerate(means) if not np.isnan(m)]
+        best_i = min(valid, key=lambda t: t[1])[0] if valid else None
+        ax.set_title(f"{title}   (lower is better)")
         ax.tick_params(axis="x", rotation=25)
-        for bar, m in zip(bars, means):
+        for j, (bar, m) in enumerate(zip(bars, means)):
             if np.isnan(m):
                 continue
-            ax.annotate(f"{m:.1f}", xy=(bar.get_x() + bar.get_width() / 2, m),
+            star = "  ★best" if j == best_i else ""
+            ax.annotate(f"{m:.1f}{star}",
+                        xy=(bar.get_x() + bar.get_width() / 2, m),
                         xytext=(0, 3), textcoords="offset points",
                         ha="center", va="bottom", fontsize=9, fontweight="bold")
+        if best_i is not None:
+            bars[best_i].set_edgecolor("black")
+            bars[best_i].set_linewidth(2.5)
 
     if merge:
         fig, axes = plt.subplots(1, len(active), figsize=(6 * len(active), 6),

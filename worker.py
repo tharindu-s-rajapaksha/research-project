@@ -57,7 +57,8 @@ class LocalRLWorker:
         • Loss aversion  g  (5-HT amplification of negative rewards)
     """
 
-    def __init__(self, state_dim: int, action_dim: int, device: torch.device = cfg.DEVICE):
+    def __init__(self, state_dim: int, action_dim: int, device: torch.device = cfg.DEVICE,
+                 replay_size: int = cfg.REPLAY_SIZE):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.device = device
@@ -71,8 +72,8 @@ class LocalRLWorker:
         # Optimizer — lr will be overridden each step
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=cfg.ALPHA_BASE)
 
-        # Replay
-        self.memory = ReplayBuffer()
+        # Replay — capacity is experiment-specific (see EXP*_REPLAY_SIZE)
+        self.memory = ReplayBuffer(capacity=replay_size)
 
         # Dynamic hyperparameters (set by Meta-Agent)
         self.alpha   = cfg.ALPHA_BASE
@@ -220,11 +221,13 @@ class StaticBaselineWorker:
 
     def __init__(self, state_dim: int, action_dim: int,
                  device: torch.device = cfg.DEVICE,
-                 epsilon: float = 0.1):
+                 epsilon: float = cfg.EPSILON_BASE,
+                 replay_size: int = cfg.REPLAY_SIZE):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.device = device
         self.epsilon = epsilon
+        self._replay_size = replay_size
 
         # Standard MLP (no plasticity)
         self.policy_net = nn.Sequential(
@@ -247,7 +250,7 @@ class StaticBaselineWorker:
 
         self.optimizer = optim.Adam(
             self.policy_net.parameters(), lr=cfg.ALPHA_BASE)
-        self.memory = ReplayBuffer()
+        self.memory = ReplayBuffer(capacity=replay_size)
         self._step_count = 0
 
     def select_action(self, state: np.ndarray, **_kwargs) -> int:

@@ -46,7 +46,12 @@ HT_SPIKE_SCALE   = 3.0          # Scaling factor for aversive event → 5-HT spi
 # Volatility / Risk Trackers  (Section 2A)
 # ─────────────────────────────────────────────────────────────────────
 VOLATILITY_WINDOW = 200          # History buffer for change detection
-VOLATILITY_THRESHOLD = 2.0       # Z-score threshold: recent mean vs baseline mean
+VOLATILITY_THRESHOLD = 3.5       # Z-score threshold: recent mean vs baseline mean.
+                                 # Raised 2.0→3.5: at 2.0 the NA detector fired on
+                                 # ordinary ε-greedy reward noise (~450×/run) rather
+                                 # than only the genuine distribution switches (~4×),
+                                 # so NA lost its selectivity and its feedback loop
+                                 # (NA↑→ε↑→more noise→NA↑) inflated exploration.
 RISK_PENALTY_THRESHOLD = -50.0  # Reward below this triggers 5-HT spike
 DEATH_PENALTY = -500.0          # Canonical "death" penalty value
 
@@ -70,7 +75,15 @@ GAMMA_MAX    = 0.999            # γ ceiling — horizon when 5-HT is saturated 
 # Exploration is ε-greedy (scale-invariant), with NA modulating the rate ε.
 # Boltzmann/softmax temperature proved uncompetitive on near-equal-Q tasks
 # (e.g. CartPole), so NA is routed through ε instead of τ.
-EPSILON_BASE = 0.1              # ε at rest (matches the vanilla-DQN baseline)
+EPSILON_BASE = 0.01             # ε at rest. Lowered 0.1→0.01 over tuning: the base
+                                # rate is the STEADY-STATE exploration floor, and NA
+                                # supplies switch-time exploration by opening ε up to
+                                # EPSILON_MAX, so the base can be very low. Measured on
+                                # the bandit, lowering it raised BOTH the cumulative
+                                # optimal-pull rate (0.1→0.03→0.01 gave 36→76→84%) and
+                                # the locked steady-state (→94.5%), and cut re-lock
+                                # time; on foraging it also cut forced-random deaths
+                                # (43→39). It leans harder on NA — which is the point.
 EPSILON_MAX  = 0.5              # ε when NA is saturated (a strong nudge, not
                                 # near-random — 0.9 wrecked stable control)
 
@@ -83,13 +96,29 @@ EPSILON_MAX  = 0.5              # ε when NA is saturated (a strong nudge, not
 #     exploration trap where the agent stays hooked on a high-EV lethal
 #     action and never samples the safe one.
 HT_PUNISHMENT_GAIN     = 4.0    # max loss up-weight on losses when 5-HT saturates
-RISK_INHIBITION_WEIGHT = 1.0    # scales the 5-HT behavioural-inhibition penalty
-HARM_EMA_DECAY         = 0.99   # EMA decay for per-action harm estimate
+RISK_INHIBITION_WEIGHT = 5.0    # scales the 5-HT behavioural-inhibition penalty.
+                                # Raised 1.0→5.0: at 1.0 the penalty subtracted from
+                                # a harmful action's Q-value was too small to overcome
+                                # the risky arm's frequent +50, so the greedy policy
+                                # still chose it ~9% of the time. 5.0 decisively
+                                # withholds actions with a death history (safe-rate
+                                # 83→93%, deaths 92→46). Only active when 5-HT is
+                                # elevated, so Exp 1/3 are unaffected.
+HARM_EMA_DECAY         = 0.90   # EMA decay for per-action harm estimate. Lowered
+                                # 0.99→0.90: at 0.99 the per-action harm estimate
+                                # took ~100 deaths to build, but only ~90 deaths
+                                # occur, so behavioural inhibition never became
+                                # strong enough. 0.90 builds a usable harm signal
+                                # within a handful of deaths.
 
 HIDDEN_DIM   = 128              # Hidden layer width
-REPLAY_SIZE  = 500              # Experience-replay buffer capacity (small: keeps
-                                # the buffer recent so the agent re-adapts quickly
-                                # to distribution switches; see threats-to-validity)
+# Replay-buffer capacity is set PER EXPERIMENT (see EXP*_REPLAY_SIZE): a volatile
+# bandit wants a SMALL buffer so stale pre-switch rewards are forgotten quickly,
+# whereas foraging/control want a LARGE buffer so rare (10%) death transitions are
+# retained long enough for the value function to learn they are catastrophic.
+REPLAY_SIZE  = 500              # SAFE fallback default when a caller does not pass a
+                                # per-experiment size (small, so it cannot silently
+                                # break the bandit as a large default once did)
 BATCH_SIZE   = 64               # Mini-batch size
 TARGET_UPDATE_FREQ = 100        # Steps between target-network syncs
 EPSILON_MIN  = 0.01             # Floor for ε (static baseline)
@@ -103,6 +132,7 @@ EXP1_SWITCH_STEPS  = [500, 1100, 1800, 3000]
 EXP1_REWARD_MU_HI  = 10.0
 EXP1_REWARD_MU_LO  = 2.0
 EXP1_REWARD_SIGMA  = 1.0
+EXP1_REPLAY_SIZE   = 500        # small → forget stale pre-switch reward stats fast
 
 # ─────────────────────────────────────────────────────────────────────
 # Experiment 2 — High-Stakes Foraging  (Section 6)
@@ -112,19 +142,28 @@ EXP2_SAFE_REWARD    = 5.0
 EXP2_RISKY_REWARD   = 50.0
 EXP2_RISKY_DEATH_P  = 0.10      # 10% death probability
 EXP2_DEATH_PENALTY  = -500.0
+EXP2_REPLAY_SIZE    = 5000      # large → retain rare death transitions for learning
 
 # ─────────────────────────────────────────────────────────────────────
 # Experiment 3 — CartPole Physics Adaptation  (Section 7)
 # ─────────────────────────────────────────────────────────────────────
-EXP3_TRAIN_EPISODES    = 300    # Pre-perturbation training
-EXP3_PERTURB_EPISODE   = 300    # Episode at which the physics changes
+EXP3_TRAIN_EPISODES    = 400    # Pre-perturbation training (300→400: give the
+                                # plastic DA-on configs more room to reach competence)
+EXP3_PERTURB_EPISODE   = 400    # Episode at which the physics changes
 EXP3_POST_EPISODES     = 300    # Post-perturbation episodes
-EXP3_NEW_GRAVITY       = 29.4   # 3× the CartPole default gravity (9.8)
-EXP3_FORCE_SCALE       = 0.5    # Actuator force_mag multiplier (halves push
-                                # strength) — proxy for a changed-dynamics shock
+EXP3_NEW_GRAVITY       = 19.6   # 2× the CartPole default gravity (9.8). Was 3×
+                                # (29.4): combined with a halved force that made the
+                                # post-shock task near-unsolvable, so "recovery" was
+                                # unmeasurable. 2× gravity is a clear but recoverable
+                                # dynamics shock.
+EXP3_FORCE_SCALE       = 1.0    # Actuator force_mag multiplier. Restored 0.5→1.0:
+                                # halving control authority ON TOP of 3× gravity was
+                                # double-jeopardy; the gravity change alone is the
+                                # cleaner single-variable dynamics perturbation.
 EXP3_RECOVERY_TARGET   = 300    # Steps sustained to count as "recovered" (60% of max)
 EXP3_COMPETENCE_TARGET = 350    # Pre-perturb rolling mean needed to be "competent" (70%)
 EXP3_COMPETENCE_WINDOW = 20     # Episodes averaged for the competence check
+EXP3_REPLAY_SIZE       = 10000  # standard DQN buffer for continuous control
 MIN_RECOVERY_SEEDS     = 5      # Min competent seeds required to report a
                                 # Recovery_Time point estimate / run its paired
                                 # test; below this the metric is left undefined

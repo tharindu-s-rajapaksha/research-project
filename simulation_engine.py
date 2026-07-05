@@ -208,8 +208,8 @@ class SimulationEngine:
     def setup_experiment(self):
         torch.manual_seed(cfg.SEED)
         np.random.seed(cfg.SEED)
-        random.seed(cfg.SEED)  # ε-greedy + replay sampling use the stdlib RNG
-        
+        random.seed(cfg.SEED)  # worker ε-greedy + replay sampling use stdlib random
+
         self.step_accumulator = 0.0
         self.plot_da.clear()
         self.plot_na.clear()
@@ -232,10 +232,16 @@ class SimulationEngine:
         
         if self.exp_id == 1:
             self.env = VolatileBandit(seed=cfg.SEED)
+            # Bandit uses a SMALL replay buffer so stale pre-switch transitions
+            # are evicted quickly — a large buffer keeps the agent training on
+            # old-phase rewards and prevents it from re-locking onto the new
+            # optimal arm (which cripples the live optimal-pull rate).
             if is_static:
-                self.worker = StaticBaselineWorker(self.env.observation_dim, self.env.action_dim)
+                self.worker = StaticBaselineWorker(self.env.observation_dim, self.env.action_dim,
+                                                   replay_size=cfg.EXP1_REPLAY_SIZE)
             else:
-                self.worker = LocalRLWorker(self.env.observation_dim, self.env.action_dim)
+                self.worker = LocalRLWorker(self.env.observation_dim, self.env.action_dim,
+                                            replay_size=cfg.EXP1_REPLAY_SIZE)
             self.state = self.env.reset()
             self.step_i = 0
             self.total_steps = cfg.EXP1_TOTAL_STEPS
@@ -249,10 +255,13 @@ class SimulationEngine:
             
         elif self.exp_id == 2:
             self.env = HighStakesForaging(seed=cfg.SEED)
+            # Foraging uses a LARGE buffer so rare death transitions persist.
             if is_static:
-                self.worker = StaticBaselineWorker(self.env.observation_dim, self.env.action_dim)
+                self.worker = StaticBaselineWorker(self.env.observation_dim, self.env.action_dim,
+                                                   replay_size=cfg.EXP2_REPLAY_SIZE)
             else:
-                self.worker = LocalRLWorker(self.env.observation_dim, self.env.action_dim)
+                self.worker = LocalRLWorker(self.env.observation_dim, self.env.action_dim,
+                                            replay_size=cfg.EXP2_REPLAY_SIZE)
             self.state = self.env.reset()
             self.step_i = 0
             self.total_steps = cfg.EXP2_TOTAL_STEPS
@@ -269,9 +278,11 @@ class SimulationEngine:
             state_dim = self.env.observation_space.shape[0]
             action_dim = self.env.action_space.n
             if is_static:
-                self.worker = StaticBaselineWorker(state_dim, action_dim)
+                self.worker = StaticBaselineWorker(state_dim, action_dim,
+                                                   replay_size=cfg.EXP3_REPLAY_SIZE)
             else:
-                self.worker = LocalRLWorker(state_dim, action_dim)
+                self.worker = LocalRLWorker(state_dim, action_dim,
+                                            replay_size=cfg.EXP3_REPLAY_SIZE)
             self.state, _ = self.env.reset(seed=cfg.SEED)
             self.episode_i = 0
             self.step_i = 0

@@ -21,7 +21,22 @@ from worker import LocalRLWorker, StaticBaselineWorker
 from environments import VolatileBandit, HighStakesForaging
 
 
-def _make_agent(state_dim: int, action_dim: int, ablation_cfg: dict):
+def _seed_all(seed: int):
+    """Seed every RNG the run touches.
+
+    The worker's ε-greedy selection and replay sampling use the *stdlib*
+    ``random`` module, so seeding only numpy/torch would leave exploration
+    non-reproducible — and, worse, break the paired significance tests, whose
+    validity requires that Full and each ablation see the SAME stochastic
+    stream on a given seed (so the only difference is the neuromodulator).
+    """
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+
+
+def _make_agent(state_dim: int, action_dim: int, ablation_cfg: dict,
+                replay_size: int = cfg.REPLAY_SIZE):
     """Factory: build Meta-Agent + Worker pair based on ablation config.
 
     All configurations use the SAME plastic ``LocalRLWorker`` so the only
@@ -30,6 +45,10 @@ def _make_agent(state_dim: int, action_dim: int, ablation_cfg: dict):
     (α/ε/γ held at their base values).  The single exception is the
     ``"vanilla": True`` reference config, which swaps in the plain-MLP
     ε-greedy ``StaticBaselineWorker`` as an external sanity anchor.
+
+    ``replay_size`` is passed per experiment: small for the volatile bandit
+    (forget stale reward stats fast), large for foraging/control (retain the
+    rare death transitions long enough to learn from them).
     """
     meta = HormonalMetaAgent(
         enable_da=ablation_cfg["DA"],
@@ -37,9 +56,11 @@ def _make_agent(state_dim: int, action_dim: int, ablation_cfg: dict):
         enable_5ht=ablation_cfg["5HT"],
     )
     if ablation_cfg.get("vanilla", False):
-        worker = StaticBaselineWorker(state_dim, action_dim)
+        worker = StaticBaselineWorker(state_dim, action_dim,
+                                      replay_size=replay_size)
     else:
-        worker = LocalRLWorker(state_dim, action_dim)
+        worker = LocalRLWorker(state_dim, action_dim,
+                               replay_size=replay_size)
     return meta, worker
 
 
@@ -57,13 +78,11 @@ def run_experiment_1(ablation_cfg: dict = None, seed: int = cfg.SEED,
     if ablation_cfg is None:
         ablation_cfg = cfg.ABLATION_CONFIGS["Full Model"]
 
-    torch.manual_seed(seed)
-    np.random.seed(seed)
-    random.seed(seed)  # ε-greedy + replay sampling use the stdlib RNG
+    _seed_all(seed)
 
     env = VolatileBandit(seed=seed)
     meta, worker = _make_agent(env.observation_dim, env.action_dim,
-                               ablation_cfg)
+                               ablation_cfg, replay_size=cfg.EXP1_REPLAY_SIZE)
     meta.hard_reset()
 
     state = env.reset()
@@ -151,13 +170,11 @@ def run_experiment_2(ablation_cfg: dict = None, seed: int = cfg.SEED,
     if ablation_cfg is None:
         ablation_cfg = cfg.ABLATION_CONFIGS["Full Model"]
 
-    torch.manual_seed(seed)
-    np.random.seed(seed)
-    random.seed(seed)  # ε-greedy + replay sampling use the stdlib RNG
+    _seed_all(seed)
 
     env = HighStakesForaging(seed=seed)
     meta, worker = _make_agent(env.observation_dim, env.action_dim,
-                               ablation_cfg)
+                               ablation_cfg, replay_size=cfg.EXP2_REPLAY_SIZE)
     meta.hard_reset()
 
     state = env.reset()
@@ -237,15 +254,14 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
     if ablation_cfg is None:
         ablation_cfg = cfg.ABLATION_CONFIGS["Full Model"]
 
-    torch.manual_seed(seed)
-    np.random.seed(seed)
-    random.seed(seed)  # ε-greedy + replay sampling use the stdlib RNG
+    _seed_all(seed)
 
     env = gym.make("CartPole-v1")
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.n
 
-    meta, worker = _make_agent(state_dim, action_dim, ablation_cfg)
+    meta, worker = _make_agent(state_dim, action_dim, ablation_cfg,
+                               replay_size=cfg.EXP3_REPLAY_SIZE)
     meta.hard_reset()
 
     total_episodes = cfg.EXP3_TRAIN_EPISODES + cfg.EXP3_POST_EPISODES

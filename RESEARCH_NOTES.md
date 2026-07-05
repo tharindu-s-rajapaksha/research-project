@@ -40,6 +40,50 @@ Final standing (10 seeds, all experiments complete):
 weights* (DA→Hebbian plasticity) helps discrete fast re-locking (bandit) but hurts
 stable continuous control (CartPole). A nuanced, defensible mixed result.
 
+> ⚠️ **The §6 result tables below are from the Phase-2 config.** A Phase-3 tuning pass
+> (§5B) has since improved every mechanism in pilot runs; the on-disk CSVs
+> (`*_exp{1,2,3}.csv`) are pre-tuning. **Re-run all three experiments** to regenerate
+> the final numbers before quoting §6.
+
+---
+
+## 0B. Phase 3 — mechanism tuning (2026-07-05)
+
+After confirming the mechanisms fire correctly, a diagnostic pass found each was
+working but under-tuned. Six changes (all in `config.py` unless noted), each validated
+by measuring the specific behaviour it targets:
+
+| Change | From → To | Why | Pilot effect (seeds 42-46) |
+|---|---|---|---|
+| `EPSILON_BASE` | 0.1 → **0.03** | 0.1 forced-random floor capped bandit exploitation, pushed steps into the lethal arm, and its noise broke re-lock streaks (inflating latency) | Exp1 latency ↓, optimal-rate ↑; Exp2 fewer forced deaths |
+| `VOLATILITY_THRESHOLD` | 2.0 → **3.5** | NA fired ~458×/run on ordinary ε-greedy reward noise instead of the ~4 genuine switches, so it lost selectivity | NA spikes 458→~180; **NA now HELPS** (Exp1 latency 200 vs 229 for Ablated-NA) |
+| `HARM_EMA_DECAY` | 0.99 → **0.90** | per-action harm estimate took ~100 deaths to build but only ~90 occur, so behavioural inhibition never got strong | stronger, faster harm signal |
+| `RISK_INHIBITION_WEIGHT` | 1.0 → **5.0** | inhibition penalty too small to overcome risky's frequent +50; greedy still chose it ~9% | Exp2 safe-rate 83→93%, deaths 92→43 |
+| replay buffer | 500 → **per-exp** (E1 500 / E2 5000 / E3 10000) | bandit needs a small buffer (forget stale rewards), foraging/control need a large one (retain rare deaths) | Exp2 value fn retains death signal |
+| Exp3 perturbation | grav ×3 + force ×0.5 → **grav ×2 + force ×1.0**; train 300→400 | ×3 grav + halved force was near-unsolvable, so recovery was unmeasurable | (CartPole re-run pending) |
+
+**Correctness fixes bundled in the same pass:**
+- **Restored `random.seed(seed)`** in all three experiment runners (`experiments.py::_seed_all`).
+  It had been lost in a revert; the worker's ε-greedy and replay sampling use the *stdlib*
+  `random`, so without it re-runs are non-reproducible **and the paired t-tests are invalid**
+  (Full and each ablation would see different stochastic streams on a shared seed). This is a
+  validity fix, not a tuning knob.
+- **Re-added Holm–Bonferroni** correction (`evaluation.py::_holm`), applied within each
+  experiment's family of comparisons → `p_holm`, `sig_holm_0.05` columns.
+- **Chart clarity:** comparative bars now say "(lower is better)" and star/outline the best
+  config (all three headline metrics are lower-is-better, so a tall bar = worse agent).
+
+**Pilot improvements vs Phase 2 (5 seeds, to be confirmed at n=10):**
+- **Exp 1:** Full now beats Ablated-NA on *both* latency (200 vs 229) and optimal-pull
+  (71.3% vs 69.4%) — NA changed from neutral/harmful to genuinely helpful.
+- **Exp 2:** deaths **89 → 43** (halved), reward **13.6k → 19.2k** (+41%), safe-rate
+  **55% → 92.5%**; 5-HT effect now ≈11× (43 vs 484 deaths).
+- **Exp 3:** re-run pending (softened perturbation + more episodes).
+
+**Note on the bandit "optimal-pull %":** the *overall* rate sits ~71% because the metric
+averages over 4 post-switch re-learning transients; *steady-state* per phase is **88–98%**.
+The overall ceiling is inherent to a 5-phase volatile bandit, not a defect.
+
 ---
 
 ## 1. Corrected experimental methodology (for the Methodology chapter)

@@ -270,6 +270,26 @@ def _metric_vectors(res_list: list) -> dict:
     return vecs
 
 
+def _holm(pvals):
+    """Holm–Bonferroni step-down adjusted p-values (returned in input order).
+
+    Controls the family-wise error rate across the multiple Full-vs-config
+    comparisons within an experiment, without assuming independence. Less
+    conservative than plain Bonferroni.
+    """
+    p = np.asarray(pvals, dtype=float)
+    m = len(p)
+    if m == 0:
+        return p
+    order = np.argsort(p)
+    adj = np.empty(m)
+    running = 0.0
+    for rank, i in enumerate(order):
+        running = max(running, (m - rank) * p[i])  # enforce monotonic step-down
+        adj[i] = min(running, 1.0)
+    return adj
+
+
 def _mean_ci(vec):
     """Mean and 95% (t-based) CI half-width, ignoring NaNs."""
     a = np.array([v for v in vec if not np.isnan(v)], dtype=float)
@@ -313,25 +333,6 @@ def summarize_multiseed(multiseed_results: dict,
     df.to_csv(fpath, index=False)
     print(f"  [Saved] {fpath}")
     return df
-
-
-def _holm(pvals: list) -> list:
-    """Holm–Bonferroni step-down adjusted p-values (aligned to input order).
-
-    For m tests, the k-th smallest raw p is scaled by (m − k + 1), then a
-    running max enforces monotonicity and values are capped at 1.0. Controls
-    the family-wise error rate without assuming independence.
-    """
-    m = len(pvals)
-    if m == 0:
-        return []
-    order = sorted(range(m), key=lambda i: pvals[i])
-    adj = [0.0] * m
-    running = 0.0
-    for rank, idx in enumerate(order):
-        running = max(running, (m - rank) * float(pvals[idx]))
-        adj[idx] = min(1.0, running)
-    return adj
 
 
 def compute_multiseed_pvalues(multiseed_results: dict,
@@ -392,7 +393,11 @@ def compute_multiseed_pvalues(multiseed_results: dict,
                              "Full_Better": bool(full_better),
                              "N_pairs": len(pairs)})
 
-    # Holm–Bonferroni correction within each experiment family.
+    # ── Holm–Bonferroni correction WITHIN each experiment's family of tests ──
+    # Each experiment runs several Full-vs-config comparisons across several
+    # metrics; correcting per experiment guards against false positives from the
+    # multiple comparisons while keeping the families scientifically coherent
+    # (one family = one experiment's hypothesis tests).
     from collections import defaultdict
     by_exp = defaultdict(list)
     for r in rows:

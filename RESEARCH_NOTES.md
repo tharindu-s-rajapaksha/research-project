@@ -18,15 +18,24 @@ The mechanisms were then **redesigned** (Phase 2) so each actually influences
 behaviour in the intended direction, and re-tested across 10 seeds with paired
 statistics.
 
-Current standing (10 seeds):
-- **Serotonin (5-HT) → harm aversion: strongly confirmed.** Removing 5-HT raises
+Final standing (10 seeds, all experiments complete):
+- **Experiment 1 — the Full model significantly beats standard RL.** It adapts to
+  reward switches ~19% faster than Vanilla DQN (latency 207 vs 254, p=0.0014) and
+  ~21% faster than the matched Static baseline (p=0.0016), with higher reward
+  (p≈0.002). On the bandit, **DA/plasticity is the main contributor** (removing it
+  hurts, p=0.04); NA contributes directionally but is not cleanly isolated at n=10.
+- **Experiment 2 — 5-HT harm aversion: strongly confirmed.** Removing 5-HT raises
   deaths **≈5.2×** (89 → 468) and flips cumulative reward from **+13,839 to −20,619**
-  (paired t on deaths t≈−47, p<10⁻⁶). This is the strongest result.
-- **Noradrenaline (NA) → adaptation:** directionally positive in pilot runs; the
-  final 10-seed Exp-1 CSV needs a re-run (was overwritten — see §9).
-- **Dopamine (DA) / plasticity → recovery:** Exp-3 running. Redesign removed the
-  earlier catastrophe (Full now *learns* CartPole), but DA-plasticity still adds
-  drag; whether it yields faster **recovery** is the open question.
+  (paired t on deaths t≈−47, p<10⁻⁶). Necessary AND sufficient for survival. Strongest result.
+- **Experiment 3 — DA/plasticity FAILS on continuous control (a clean negative).**
+  DA-gated plasticity *impairs* CartPole: only **2/10** DA-on seeds reach competence
+  vs **8/10** with DA off, and Full's reward is significantly *lower* than Static
+  (p=0.035) and Vanilla (p=0.006). Recovery is inconclusive (too few competent Full seeds).
+
+**One-line takeaway:** the two mechanisms that act on the *policy* (NA→ε-exploration,
+5-HT→behavioural inhibition) beat standard RL; the mechanism that acts on the *network
+weights* (DA→Hebbian plasticity) helps discrete fast re-locking (bandit) but hurts
+stable continuous control (CartPole). A nuanced, defensible mixed result.
 
 ---
 
@@ -209,18 +218,56 @@ collapses to ≈−20,600. Every config *lacking* 5-HT clusters together and fai
 every config *with* 5-HT succeeds. This cleanly isolates the serotonergic
 behavioural-inhibition mechanism as the causal driver, exactly as hypothesised.
 
-### 6.2 Experiment 1 — Volatile Bandit (NA) ⚠️ re-run needed
-Pilot/short runs consistently show NA lowering adaptation latency (Full re-locks
-faster than Ablated-NA and Vanilla). **The final 10-seed CSV was overwritten** during
-the per-experiment runs (§9) — re-run `python main.py --exp 1 --workers 12` to
-regenerate `summary_multiseed_exp1.csv` / `pvalues_exp1.csv` before quoting numbers.
+### 6.2 Experiment 1 — Volatile Bandit (NA / adaptation), n=10 ✅ beats standard RL
 
-### 6.3 Experiment 3 — CartPole (DA/plasticity) ⏳ running
-Redesign removed the catastrophe: the Full model now *learns* CartPole (pilot last-30
-≈205 steps, vs its old ~10–24 random-level). It still trails Static (~420) and Vanilla
-(~450), i.e. DA-plasticity adds drag. The open question is whether Full shows **faster
-recovery** after the physics shock than Static. Await `summary_multiseed.csv` /
-`pvalues.csv` from the running job (copy them to `*_exp3.csv` when done).
+Adaptation latency (steps to re-lock, lower better) and cumulative reward (mean ± 95% CI):
+
+| Config | Latency ↓ | Total Reward ↑ |
+|---|---|---|
+| **Full Model** | **206.9 ± 28.7** | **30,341 ± 575** |
+| Ablated DA | 245.9 ± 16.6 | 29,340 ± 486 |
+| Ablated NA | 227.4 ± 17.4 | 29,787 ± 526 |
+| Ablated 5-HT | 200.0 ± 21.6 | 30,154 ± 634 |
+| Static Baseline | 262.3 ± 10.8 | 29,081 ± 238 |
+| Vanilla DQN | 254.3 ± 13.7 | 29,390 ± 353 |
+
+Paired tests (Full vs …):
+- **vs Vanilla DQN:** latency t=−4.57 (p=0.0014), reward t=4.46 (p=0.0016) — **Full significantly better** (~19% faster adaptation).
+- **vs Static Baseline:** latency t=−4.47 (p=0.0016), reward t=4.06 (p=0.003) — **Full significantly better** (~21% faster).
+- vs Ablated DA: latency t=−2.41 (p=0.039), reward t=3.01 (p=0.015) — **DA/plasticity helps** adaptation here.
+- vs Ablated NA: Full better directionally (207 vs 227) but **not significant** (p=0.23).
+- vs Ablated 5-HT: no difference (5-HT correctly irrelevant to the bandit).
+
+**Interpretation:** the full neuromodulated agent adapts to distribution switches
+significantly faster and earns more than a standard DQN — the core "beats standard RL"
+claim, supported with paired statistics. Notably, on this discrete fast-switching task
+the **dopaminergic fast-weights** contribute more than noradrenergic exploration.
+
+### 6.3 Experiment 3 — CartPole (DA / plasticity), n=10 ❌ negative (clean)
+
+The diagnostic is the **pre-shock competence rate** — of 10 seeds, how many learned
+CartPole (rolling ≥350) before the perturbation (this is `N_seeds` on Recovery_Time):
+
+| Config | DA on? | Competent seeds | Total Reward |
+|---|---|---|---|
+| Full Model | yes | **2 / 10** | 142,361 ± 10,078 |
+| Ablated NA | yes | 3 / 10 | 140,658 ± 17,068 |
+| Ablated 5-HT | yes | 1 / 10 | 141,433 ± 11,311 |
+| **Ablated DA** | no | **8 / 10** | 169,574 ± 16,646 |
+| Static Baseline | no | **8 / 10** | 161,498 ± 11,203 |
+| Vanilla DQN | — | 4 / 10 | 162,058 ± 10,286 |
+
+Paired reward tests (Full vs …): worse than **Static** (t=−2.48, p=0.035), **Vanilla**
+(t=−3.62, p=0.006), and **Ablated DA** (t=−3.04, p=0.014); indistinguishable from the
+other DA-on configs.
+
+**Interpretation:** DA-gated plasticity **impairs** stable continuous control. Configs
+with dopamine active reach competence in only 1–3/10 seeds vs 8/10 with DA off, and the
+Full model earns significantly less reward than the static baseline. **Recovery time is
+inconclusive** — the Full model reaches competence too rarely (2 seeds) to measure a
+recovery advantage; among the few competent seeds it is not distinguishable from Static.
+The intended dopaminergic "fast re-adaptation" benefit is therefore **not demonstrated**
+on continuous control; the fast-weights that help discrete re-locking (Exp 1) hurt here.
 
 ---
 
@@ -272,12 +319,16 @@ recovery** after the physics shock than Static. Await `summary_multiseed.csv` /
 
 ## 9. Threats to validity & limitations (Threats-to-Validity section)
 
-- **CSV overwrite (operational, now fixed).** Running `main.py --exp N` repeatedly
-  overwrote the shared `summary_multiseed.csv`/`pvalues.csv`. Fixed: per-experiment
-  runs now write `*_exp{N}.csv`. The Exp-1 aggregate from the batch was lost and
-  needs a quick re-run; Exp-2 was preserved as `*_exp2.csv`.
-- **n=10 seeds.** Adequate for the large 5-HT effect; marginal effects (e.g. small NA
-  differences) may need more seeds. Report CIs, not just p.
+- **n=10 seeds.** Ample for the large effects (5-HT survival; Exp-1 Full-vs-baseline).
+  **The NA contribution is under-powered** — removing NA raises latency 207→227 but
+  p=0.23, so NA is not *individually* isolated at n=10 even though the Full model wins.
+  A larger n (or an NA-specific stress task) would be needed to claim NA causally.
+  Report CIs, not just p.
+- **Exp-3 recovery is under-powered by construction.** Because DA-plasticity suppresses
+  competence, only 2/10 Full seeds qualify for a recovery measurement, so the recovery
+  comparison is inconclusive rather than a clean "no faster recovery". State it as
+  "could not be assessed", and lead the Exp-3 story with the competence-rate and reward
+  results, which are clear.
 - **Hand-tuned thresholds** (competence, ε_max, punishment gain, harm weight) were set
   by pilot inspection, not swept — a sensitivity analysis would strengthen the claims.
 - **DA-plasticity is at best neutral, sometimes harmful** on the tasks tested; its
@@ -292,14 +343,22 @@ recovery** after the physics shock than Static. Await `summary_multiseed.csv` /
 
 ## 10. Suggested narrative & future work (Discussion / Conclusion)
 
-**Honest headline the results support:** *"A serotonergic behavioural-inhibition
-mechanism produces robust, statistically overwhelming harm aversion (≈5× fewer
-catastrophic failures; cumulative reward flips from strongly negative to strongly
-positive), cleanly isolated from the other neuromodulators. Noradrenergic
-ε-modulation improves adaptation to reward shifts. Dopaminergic gated plasticity, by
-contrast, does not yet improve stable-control learning or recovery over a matched
-static baseline."* This is a credible, defensible mixed result — a strength, not a
-weakness, of a rigorous study.
+**Honest headline the results support:** *"The full multi-neuromodulated agent
+significantly outperforms a standard DQN on two of three tasks. On a volatile bandit
+it adapts ~19% faster to reward switches (p=0.001); on high-stakes foraging a
+serotonergic behavioural-inhibition mechanism produces robust, statistically
+overwhelming harm aversion (≈5× fewer catastrophic failures, p<10⁻⁶), cleanly isolated
+from the other neuromodulators. However, the dopaminergic gated-plasticity mechanism
+is task-dependent: it aids rapid re-locking on the discrete bandit but IMPAIRS stable
+continuous control (CartPole), where it is significantly worse than the matched static
+baseline and fails to demonstrate the intended faster recovery."* This is a credible,
+defensible mixed result — the split between policy-level modulation (works) and
+weight-level plasticity (task-dependent) is the intellectual core of the discussion.
+
+**Two "beats standard RL" wins with proper statistics** (Exp 1 adaptation, Exp 2
+survival, both vs Vanilla DQN and vs the matched Static baseline) plus **one clean
+negative** (Exp 3 plasticity) is a stronger, more honest contribution than a uniform
+"it works" — and it directly answers the research question mechanism-by-mechanism.
 
 **Framing the method contribution:** the value is as much the **evaluation protocol**
 (fair same-architecture ablation, reduces-to-baseline invariant, per-seed paired

@@ -12,7 +12,6 @@ Responsibilities (Section 2A):
 """
 
 import numpy as np
-from collections import deque
 
 import config as cfg
 from neuromodulators import HormoneEngine
@@ -45,7 +44,6 @@ class HormonalMetaAgent:
         self.engine = HormoneEngine(enable_da, enable_na, enable_5ht)
 
         # Performance trackers
-        self._recent_rewards = deque(maxlen=cfg.VOLATILITY_WINDOW)
         self._death_count = 0
         self._total_steps = 0
 
@@ -71,7 +69,6 @@ class HormonalMetaAgent:
                 'alpha', 'epsilon', 'gamma', 'punish_gain', and hormone levels.
         """
         self._total_steps += 1
-        self._recent_rewards.append(reward)
 
         if done and reward <= cfg.RISK_PENALTY_THRESHOLD:
             self._death_count += 1
@@ -108,7 +105,6 @@ class HormonalMetaAgent:
     def hard_reset(self):
         """Full reset including hormone levels (for new experiment run)."""
         self.engine.reset()
-        self._recent_rewards.clear()
         self._death_count = 0
         self._total_steps = 0
         self.history_alpha.clear()

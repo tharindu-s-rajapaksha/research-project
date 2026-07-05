@@ -26,7 +26,10 @@ Final standing (10 seeds, all experiments complete):
   hurts, p=0.04); NA contributes directionally but is not cleanly isolated at n=10.
 - **Experiment 2 — 5-HT harm aversion: strongly confirmed.** Removing 5-HT raises
   deaths **≈5.2×** (89 → 468) and flips cumulative reward from **+13,839 to −20,619**
-  (paired t on deaths t≈−47, p<10⁻⁶). Necessary AND sufficient for survival. Strongest result.
+  (paired t on deaths t≈−47, p<10⁻⁶). Necessary AND sufficient for survival. Strongest
+  result. (Framing correction: the risky arm is *negative-EV* (−5 < +5), so 5-HT
+  reaches the **true reward optimum** a plain DQN misses — it does not sacrifice
+  reward for safety; see §6.1.)
 - **Experiment 3 — DA/plasticity FAILS on continuous control (a clean negative).**
   DA-gated plasticity *impairs* CartPole: only **2/10** DA-on seeds reach competence
   vs **8/10** with DA off, and Full's reward is significantly *lower* than Static
@@ -139,9 +142,12 @@ resting γ). This motivated Phase 2.
   Q-values are near-equal (CartPole), any moderate temperature is near-uniform, so
   the agent explored far more than ε-greedy and never converged.
 - **5-HT never entered the action values.** It only touched γ and suppressed DA_eff
-  (which affects plasticity/α). A far-sighted agent still sees the risky option's EV
-  (+45) > safe (+5) and takes it. Nothing made the *policy* risk-sensitive → no harm
-  aversion once γ was correct.
+  (which affects plasticity/α). Nothing made the *policy* risk-sensitive, so the
+  original model could not avoid the risky action once γ was correct. (NB: the
+  original spec claimed risky EV = 0.9×50 = **+45** > safe +5 — this omits the −500
+  death, which the DQN *does* receive as a per-step reward. The true per-step EV of
+  risky is 0.9(50)+0.1(−500) = **−5 < +5**, i.e. risky is *negative-EV*; the correct
+  framing is in §6.1.)
 - **DA-plasticity applied at full strength always.** The Hebbian fast-weights were
   active even at rest, injecting noise into stable-control learning.
 
@@ -212,11 +218,23 @@ Paired tests (Full vs …):
 - vs Ablated DA: Ablated-DA is *slightly* better (deaths 81 vs 89, p<10⁻⁶) — DA-plasticity mildly **hurts** survival (extra exploration noise).
 
 **Interpretation (thesis-ready):** Serotonin is **necessary and sufficient** for
-survival here. With 5-HT the agent is net-positive and dies ≈89 times; without it —
-and identically for Static and Vanilla — it dies ≈467 times and cumulative reward
-collapses to ≈−20,600. Every config *lacking* 5-HT clusters together and fails;
-every config *with* 5-HT succeeds. This cleanly isolates the serotonergic
-behavioural-inhibition mechanism as the causal driver, exactly as hypothesised.
+survival here — but the framing matters. The risky action is **negative expected
+value**: per-step EV = 0.9(50) + 0.1(−500) = **−5**, *below* the safe +5, so the
+reward-maximising policy is already to avoid it. 5-HT therefore does **not** trade
+reward for safety; it lets the agent reach the **true reward optimum** that a plain
+DQN fails to find. The plain DQN fails for value-estimation reasons: (i) the
+Huber/`smooth_l1` loss clips the gradient of the rare −500, so the catastrophe is
+under-weighted; (ii) the small replay buffer (500) under-samples the 10% death;
+(iii) ε-greedy keeps resampling the risky arm. 5-HT's two pathways (punishment
+up-weighting + behavioural inhibition) counter exactly these failures. Concretely:
+the optimal always-safe policy scores ≈**+25,000**; **Full = +13,839** (dies ≈89× —
+it *reduces*, not eliminates, the failure); every config **without** 5-HT
+(Ablated-5HT, Static, Vanilla) collapses to ≈**−20,600** and ≈467 deaths. Every
+config *with* 5-HT succeeds, cleanly isolating the serotonergic
+behavioural-inhibition mechanism as the causal driver — as hypothesised, though for
+the corrected (value-estimation-failure) reason rather than "caution overriding
+higher-reward greed". **The original "mathematical trap" arithmetic (risky EV +45 >
+safe +5) was wrong; state the −5 EV in the dissertation.**
 
 ### 6.2 Experiment 1 — Volatile Bandit (NA / adaptation), n=10 ✅ beats standard RL
 

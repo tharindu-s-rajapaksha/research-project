@@ -293,8 +293,18 @@ def summarize_multiseed(multiseed_results: dict,
         for cfg_label, res_list in configs.items():
             for metric, vec in _metric_vectors(res_list).items():
                 mean, ci, n = _mean_ci(vec)
+                # Recovery_Time is only defined for pre-shock-competent seeds, and
+                # DA suppresses competence, so some configs have too few competent
+                # seeds to report a meaningful mean. Suppress the point estimate
+                # below MIN_RECOVERY_SEEDS (keep the true N so it is visibly
+                # undefined, not silently missing).
+                if (metric == "Recovery_Time"
+                        and n < cfg.MIN_RECOVERY_SEEDS):
+                    mean, ci = float("nan"), float("nan")
                 rows.append({"Experiment": exp_name, "Configuration": cfg_label,
-                             "Metric": metric, "Mean": round(mean, 4),
+                             "Metric": metric,
+                             "Mean": (round(mean, 4) if not np.isnan(mean)
+                                      else float("nan")),
                              "CI95": (round(ci, 4) if not np.isnan(ci)
                                       else float("nan")),
                              "N_seeds": n})
@@ -305,6 +315,25 @@ def summarize_multiseed(multiseed_results: dict,
     return df
 
 
+def _holm(pvals: list) -> list:
+    """Holm–Bonferroni step-down adjusted p-values (aligned to input order).
+
+    For m tests, the k-th smallest raw p is scaled by (m − k + 1), then a
+    running max enforces monotonicity and values are capped at 1.0. Controls
+    the family-wise error rate without assuming independence.
+    """
+    m = len(pvals)
+    if m == 0:
+        return []
+    order = sorted(range(m), key=lambda i: pvals[i])
+    adj = [0.0] * m
+    running = 0.0
+    for rank, idx in enumerate(order):
+        running = max(running, (m - rank) * float(pvals[idx]))
+        adj[idx] = min(1.0, running)
+    return adj
+
+
 def compute_multiseed_pvalues(multiseed_results: dict,
                               filename: str = "pvalues.csv"):
     """Paired significance tests: Full Model vs each other config, per metric.
@@ -313,6 +342,13 @@ def compute_multiseed_pvalues(multiseed_results: dict,
     per-seed metric vectors (dropping any seed where either side is NaN,
     e.g. an undefined CartPole recovery). This replaces the earlier
     single-seed window-chunking test, which was pseudoreplication.
+
+    Because each experiment runs many comparisons (Full vs each config × each
+    metric), we additionally report **Holm–Bonferroni adjusted p-values**
+    (`p_holm`, `sig_holm_0.05`) computed within each experiment family, so the
+    marginal results are held to the corrected threshold. Recovery_Time
+    comparisons with fewer than MIN_RECOVERY_SEEDS competent pairs are skipped
+    (too few competent seeds to be meaningful).
     """
     _ensure_dir()
     rows = []
@@ -330,7 +366,11 @@ def compute_multiseed_pvalues(multiseed_results: dict,
                     continue
                 pairs = [(f, o) for f, o in zip(full_vec, other_vec)
                          if not (np.isnan(f) or np.isnan(o))]
-                if len(pairs) < 2:
+                # Recovery_Time needs enough competent-in-both seeds to be
+                # meaningful; other metrics only need a valid pair.
+                min_pairs = (cfg.MIN_RECOVERY_SEEDS
+                             if metric == "Recovery_Time" else 2)
+                if len(pairs) < min_pairs:
                     continue
                 f_arr = np.array([p[0] for p in pairs])
                 o_arr = np.array([p[1] for p in pairs])
@@ -351,6 +391,18 @@ def compute_multiseed_pvalues(multiseed_results: dict,
                              "sig_0.05": bool(p < 0.05),
                              "Full_Better": bool(full_better),
                              "N_pairs": len(pairs)})
+
+    # Holm–Bonferroni correction within each experiment family.
+    from collections import defaultdict
+    by_exp = defaultdict(list)
+    for r in rows:
+        by_exp[r["Experiment"]].append(r)
+    for exp_rows in by_exp.values():
+        adj = _holm([r["p_value"] for r in exp_rows])
+        for r, pa in zip(exp_rows, adj):
+            r["p_holm"] = round(float(pa), 6)
+            r["sig_holm_0.05"] = bool(pa < 0.05)
+
     df = pd.DataFrame(rows)
     fpath = os.path.join(cfg.RESULTS_DIR, filename)
     df.to_csv(fpath, index=False)

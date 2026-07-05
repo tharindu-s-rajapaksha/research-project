@@ -1,8 +1,19 @@
+"""
+simulation_engine.py — Live pygame demo + legacy serial runner.
+
+NOTE: ``main.py`` is the canonical entry point for the statistical study
+(parallel multi-seed runner + Holm-corrected significance tests). This file
+provides the interactive pygame dashboard (``--mode live``) and a legacy
+single-process ablation path (``--mode ablation``); prefer ``main.py`` for
+producing the reported results.
+"""
+
 import sys
 import argparse
 import collections
 import time
 import os
+import random
 
 import numpy as np
 import torch
@@ -197,6 +208,7 @@ class SimulationEngine:
     def setup_experiment(self):
         torch.manual_seed(cfg.SEED)
         np.random.seed(cfg.SEED)
+        random.seed(cfg.SEED)  # ε-greedy + replay sampling use the stdlib RNG
         
         self.step_accumulator = 0.0
         self.plot_da.clear()
@@ -374,7 +386,7 @@ class SimulationEngine:
         # print(f"step {self.step_i}: reward={self.reward}, td_error={td_error}, da={modulation['DA']}, na={modulation['NA']}, ht={modulation['5HT']}")
 
         # Chart 2: Hyperparameters
-        # print(f"step {self.step_i} | DA_eff: {modulation['DA_eff']:.2f}, NA: {modulation['NA']:.2f}, 5HT: {modulation['5HT']:.2f} | Alpha: {modulation['alpha']:.4f}, Tau: {modulation['tau']:.2f}, Gamma: {modulation['gamma']:.2f}")
+        # print(f"step {self.step_i} | DA_eff: {modulation['DA_eff']:.2f}, NA: {modulation['NA']:.2f}, 5HT: {modulation['5HT']:.2f} | Alpha: {modulation['alpha']:.4f}, Epsilon: {modulation['epsilon']:.2f}, Gamma: {modulation['gamma']:.2f}")
 
         self.state = next_state
         self.step_i += 1

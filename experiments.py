@@ -9,6 +9,8 @@ Experiment 2: High-Stakes Foraging         (5-HT Test)
 Experiment 3: CartPole Physics Adaptation   (Learning Rate Test)
 """
 
+import random
+
 import numpy as np
 import gymnasium as gym
 import torch
@@ -57,6 +59,7 @@ def run_experiment_1(ablation_cfg: dict = None, seed: int = cfg.SEED,
 
     torch.manual_seed(seed)
     np.random.seed(seed)
+    random.seed(seed)  # ε-greedy + replay sampling use the stdlib RNG
 
     env = VolatileBandit(seed=seed)
     meta, worker = _make_agent(env.observation_dim, env.action_dim,
@@ -150,6 +153,7 @@ def run_experiment_2(ablation_cfg: dict = None, seed: int = cfg.SEED,
 
     torch.manual_seed(seed)
     np.random.seed(seed)
+    random.seed(seed)  # ε-greedy + replay sampling use the stdlib RNG
 
     env = HighStakesForaging(seed=seed)
     meta, worker = _make_agent(env.observation_dim, env.action_dim,
@@ -235,6 +239,7 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
 
     torch.manual_seed(seed)
     np.random.seed(seed)
+    random.seed(seed)  # ε-greedy + replay sampling use the stdlib RNG
 
     env = gym.make("CartPole-v1")
     state_dim = env.observation_space.shape[0]

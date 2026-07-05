@@ -95,7 +95,8 @@ class LocalRLWorker:
 
         Args:
             state:          Current observation (numpy).
-            hormone_signal: DA_eff for the plastic forward pass.
+            hormone_signal: DA-gated plasticity signal (``plastic_gate``; 0 at
+                            rest) for the plastic forward pass.
 
         Returns:
             Chosen action index.
@@ -135,7 +136,8 @@ class LocalRLWorker:
         """Perform one gradient step on the policy network.
 
         Args:
-            hormone_signal: DA_eff passed to the plastic forward pass.
+            hormone_signal: DA-gated plasticity signal (``plastic_gate``; 0 at
+                            rest) passed to the plastic forward pass.
 
         Returns:
             TD error (float) for the Meta-Agent.

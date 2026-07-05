@@ -20,8 +20,9 @@ else:
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 SEED = 42
 # Seeds for the statistical study. Every config is run on EVERY seed, so the
-# per-seed metric vectors are paired by seed. 5 keeps a full run to ~1h; bump
-# toward 10+ for the final report (heavy: len(SEEDS)×n_configs×3 experiments).
+# per-seed metric vectors are paired by seed. 10 seeds is the reported setting
+# (heavy: len(SEEDS)×n_configs×3 experiments). Each runner reseeds torch, numpy
+# AND the stdlib `random` from this value, so every run is fully reproducible.
 SEEDS = [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research_results")
 
@@ -86,7 +87,9 @@ RISK_INHIBITION_WEIGHT = 1.0    # scales the 5-HT behavioural-inhibition penalty
 HARM_EMA_DECAY         = 0.99   # EMA decay for per-action harm estimate
 
 HIDDEN_DIM   = 128              # Hidden layer width
-REPLAY_SIZE  = 500              # Experience-replay buffer capacity (CHANGED FROM 10000 to 500)
+REPLAY_SIZE  = 500              # Experience-replay buffer capacity (small: keeps
+                                # the buffer recent so the agent re-adapts quickly
+                                # to distribution switches; see threats-to-validity)
 BATCH_SIZE   = 64               # Mini-batch size
 TARGET_UPDATE_FREQ = 100        # Steps between target-network syncs
 EPSILON_MIN  = 0.01             # Floor for ε (static baseline)
@@ -122,6 +125,10 @@ EXP3_FORCE_SCALE       = 0.5    # Actuator force_mag multiplier (halves push
 EXP3_RECOVERY_TARGET   = 300    # Steps sustained to count as "recovered" (60% of max)
 EXP3_COMPETENCE_TARGET = 350    # Pre-perturb rolling mean needed to be "competent" (70%)
 EXP3_COMPETENCE_WINDOW = 20     # Episodes averaged for the competence check
+MIN_RECOVERY_SEEDS     = 5      # Min competent seeds required to report a
+                                # Recovery_Time point estimate / run its paired
+                                # test; below this the metric is left undefined
+                                # (too few competent seeds to be meaningful)
 
 # ─────────────────────────────────────────────────────────────────────
 # Ablation Study  (Section 9)

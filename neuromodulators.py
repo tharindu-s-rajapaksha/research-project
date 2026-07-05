@@ -44,8 +44,8 @@ class HormoneEngine:
         self.na  = cfg.HORMONE_BASELINE     # (1.0) NA: Unexpected Uncertainty
         self.ht  = cfg.HORMONE_BASELINE     # (1.0) 5-HT: Aversion / Stress / Risk
 
-        # Change detection — moving window of rewards & prediction errors
-        self._error_history = deque(maxlen=cfg.VOLATILITY_WINDOW)
+        # Change detection — moving window of rewards (the NA detector is a
+        # one-sided reward-drop test; see _compute_na_spike)
         self._reward_history = deque(maxlen=cfg.VOLATILITY_WINDOW)
 
         # Logging buffers (for visualization)
@@ -98,7 +98,6 @@ class HormoneEngine:
         self.da = cfg.HORMONE_BASELINE
         self.na = cfg.HORMONE_BASELINE
         self.ht = cfg.HORMONE_BASELINE
-        self._error_history.clear()
         self._reward_history.clear()
 
     def get_vector(self) -> np.ndarray:
@@ -161,8 +160,10 @@ class HormoneEngine:
         Dynamics-change adaptation where the reward stream is uninformative
         (e.g. CartPole, constant +1/step) is instead handled by dopamine,
         which keys on the TD-error spike after the shock.
+
+        (``td_error`` is accepted for a uniform signature with the other spike
+        functions but is intentionally unused — NA keys on reward, not TD.)
         """
-        self._error_history.append(abs(td_error))
         self._reward_history.append(reward)
 
         # Warmup: need full buffers

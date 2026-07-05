@@ -69,9 +69,9 @@ class NeuromodulatedLinear(nn.Module):
 
         Args:
             x:               Input tensor of shape (batch, in_features).
-            hormone_signal:  Scalar from the Meta-Agent's hormonal vector
-                             (typically DA_eff). Controls the magnitude of
-                             the Hebbian contribution.
+            hormone_signal:  Scalar DA-gated plasticity signal from the
+                             Meta-Agent (``plastic_gate``; 0 at rest). Controls
+                             the magnitude of the Hebbian contribution.
             update_trace:    If False, the eligibility trace is NOT advanced.
                              Used for the (frozen) target network, whose trace
                              must stay a fixed snapshot rather than drift with

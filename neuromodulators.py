@@ -190,12 +190,22 @@ class HormoneEngine:
 
         short_len = max(20, self._reward_history.maxlen // 5)
 
-        # Reward DROP (recent mean below the established baseline), one-sided.
-        rewards = list(self._reward_history)
+        # Reward DROP, one-sided, via a ROBUST (median / MAD) change detector.
+        # A mean/σ test is dominated by the risky arm's heavy-tailed +50 (and,
+        # if not excluded, −500) outcomes, so the modest switch-induced drop in
+        # the *ordinary* foraging reward is buried and NA never fires on any
+        # task that also has a high-variance gamble (the capstone). The median
+        # and MAD ignore that minority of extreme pulls, so NA responds to the
+        # genuine distribution switch. For Gaussian rewards (the pure bandit)
+        # median≈mean and 1.4826·MAD≈σ, so this reduces to the old test and the
+        # per-experiment thresholds still transfer.
+        rewards = np.asarray(self._reward_history, dtype=float)
         r_recent   = rewards[-short_len:]
         r_baseline = rewards[:-short_len]
-        z_score = max(0.0, float(np.mean(r_baseline)) - float(np.mean(r_recent))) / \
-                  (float(np.std(r_baseline)) + 1e-6)
+        med_base = float(np.median(r_baseline))
+        mad_base = float(np.median(np.abs(r_baseline - med_base)))
+        scale = 1.4826 * mad_base + 1e-6            # ≈ σ for Gaussian data
+        z_score = max(0.0, med_base - float(np.median(r_recent))) / scale
 
         if z_score > self.volatility_threshold:
             return (z_score - self.volatility_threshold) * cfg.NA_SPIKE_SCALE

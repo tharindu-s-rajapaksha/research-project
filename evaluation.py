@@ -327,6 +327,8 @@ def scalar_metrics(res: dict) -> dict:
     m = {"Total_Reward": float(np.sum(res.get("rewards", []) or [0.0]))}
     if "adaptation_latency" in res:
         m["Adaptation_Latency"] = float(res["adaptation_latency"])
+    if "accuracy" in res:                      # contextual capstone (Exp 3)
+        m["Accuracy"] = float(res["accuracy"])
     if "death_count" in res:
         m["Death_Count"] = float(res["death_count"])
         m["Survival_Rate"] = float(np.mean(res.get("survival_steps", [0])))

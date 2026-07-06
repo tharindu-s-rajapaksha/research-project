@@ -27,7 +27,7 @@ import config as cfg
 from meta_agent import HormonalMetaAgent
 from worker import LocalRLWorker, StaticBaselineWorker
 from environments import (VolatileBandit, HighStakesForaging,
-                          VolatileRiskyForaging)
+                          VolatileRiskyForaging, ContextualRiskyForaging)
 import experiments
 import evaluation
 from ablation import (run_multiseed_study, plot_comparative_bars_multiseed,
@@ -281,8 +281,8 @@ class SimulationEngine:
             self.survival_steps = 0
             
         elif self.exp_id == 3:
-            # CAPSTONE — Volatile Risky Foraging (moving good arm + lethal arm).
-            self.env = VolatileRiskyForaging(seed=cfg.SEED)
+            # CAPSTONE — Contextual Risky Foraging (cue→action reversal + lethal arm).
+            self.env = ContextualRiskyForaging(seed=cfg.SEED)
             if is_static:
                 self.worker = StaticBaselineWorker(self.env.observation_dim, self.env.action_dim,
                                                    replay_size=cfg.VRF_REPLAY_SIZE)
@@ -301,7 +301,8 @@ class SimulationEngine:
             self.survival_steps = 0
             self.optimal_count = 0
             self.optimal_percentage = 0.0
-            self.cur_optimal = self.env.optimal_sequence[0]
+            self.cue = int(np.argmax(self.state))
+            self.cur_optimal = 0
             self.risky_arm = self.env.risky_arm
             self.switched_timer = 0
 
@@ -446,7 +447,7 @@ class SimulationEngine:
         return False
 
     def _step_exp3(self):
-        # CAPSTONE — bandit-style step (moving good arm + lethal arm).
+        # CAPSTONE — contextual reversal step (cue→action mapping + lethal arm).
         if self.step_i >= self.total_steps:
             return True
 
@@ -462,7 +463,8 @@ class SimulationEngine:
 
         # Update metrics
         self.cum_reward += self.reward
-        self.cur_optimal = info["optimal_arm"]
+        self.cue = info["cue"]                 # the cue just acted on
+        self.cur_optimal = info["optimal_arm"] # its correct action
         if self.action == info["optimal_arm"]:
             self.optimal_count += 1
         self.optimal_percentage = (self.optimal_count / (self.step_i + 1)) * 100
@@ -678,39 +680,42 @@ class SimulationEngine:
         pygame.draw.circle(self.screen, (255,255,255), (int(agent_x), int(cy)), 40, 3)
 
     def _render_story_exp3(self):
-        # CAPSTONE — moving good arm (green) + lethal arm (red skull).
+        # CAPSTONE (contextual) — a CUE, its correct action (green), lethal arm (red).
         n_arms = self.env.n_actions
-        good = getattr(self, "cur_optimal", self.env.optimal_sequence[0])
+        good = getattr(self, "cur_optimal", 0)      # correct action for the current cue
+        cue = getattr(self, "cue", 0)
         risky = self.risky_arm
         w = self.story_rect.width / n_arms
 
+        # Cue banner.
+        cue_lbl = self.large_font.render(
+            f"CUE {cue}  →  correct action = Arm {good}", True, (120, 200, 255))
+        self.screen.blit(cue_lbl, (self.story_rect.x + 20, self.story_rect.y + 8))
+
         for i in range(n_arms):
             bx = self.story_rect.x + i * w + 30
-            by = self.story_rect.y + 60
+            by = self.story_rect.y + 55
             bw = w - 60
-            bh = self.story_rect.height - 120
+            bh = self.story_rect.height - 115
 
-            # Base tile; highlight the chosen arm.
             color = (60, 60, 80)
             if hasattr(self, "action") and self.action == i:
-                color = (180, 180, 80)
+                color = (180, 180, 80)          # chosen arm
             pygame.draw.rect(self.screen, color, (bx, by, bw, bh))
             border = (200, 60, 60) if i == risky else (200, 200, 200)
             pygame.draw.rect(self.screen, border, (bx, by, bw, bh), 3)
 
-            # True-value bar: risky (red), current good (green), else meagre (grey).
             if i == risky:
-                mu, bar_col, tag = cfg.VRF_RISKY_REWARD, (200, 70, 70), "RISKY ☠"
+                bar_col, tag = (200, 70, 70), "RISKY ☠"
             elif i == good:
-                mu, bar_col, tag = cfg.VRF_MU_HI, (80, 200, 80), f"GOOD μ={cfg.VRF_MU_HI:.0f}"
+                bar_col, tag = (80, 200, 80), "CORRECT"
             else:
-                mu, bar_col, tag = cfg.VRF_MU_LO, (110, 110, 130), f"μ={cfg.VRF_MU_LO:.0f}"
-            bar_h = min(1.0, mu / 55.0) * bh
-            pygame.draw.rect(self.screen, bar_col,
-                             (bx + 8, by + bh - bar_h, bw - 16, bar_h))
+                bar_col, tag = (110, 110, 130), "wrong"
+            # A simple full-height swatch so the correct/risky arms read at a glance.
+            pygame.draw.rect(self.screen, bar_col, (bx + 8, by + bh - 40, bw - 16, 32))
 
             lbl = self.large_font.render(f"Arm {i}", True, C_TEXT)
-            self.screen.blit(lbl, (bx + bw / 2 - lbl.get_width() / 2, by - 35))
+            self.screen.blit(lbl, (bx + bw / 2 - lbl.get_width() / 2, by + 6))
             tag_lbl = self.font.render(tag, True, C_TEXT)
             self.screen.blit(tag_lbl, (bx + bw / 2 - tag_lbl.get_width() / 2, by + bh + 8))
 
@@ -718,11 +723,11 @@ class SimulationEngine:
             pygame.draw.rect(self.screen, (255, 0, 0), self.story_rect, 5)
             skull = self.huge_font.render("DEATH (-500)", True, (255, 50, 50))
             self.screen.blit(skull, (self.story_rect.centerx - skull.get_width() / 2,
-                                     self.story_rect.y + 15))
+                                     self.story_rect.y + 40))
         elif getattr(self, "switched_timer", 0) > 0:
-            sw = self.huge_font.render("SWITCHED! good arm moved", True, (255, 200, 50))
+            sw = self.huge_font.render("REVERSAL! mapping changed", True, (255, 200, 50))
             self.screen.blit(sw, (self.story_rect.centerx - sw.get_width() / 2,
-                                  self.story_rect.y + 15))
+                                  self.story_rect.y + 40))
 
 # ---------------------------------------------------------
 # Fast Mode Runner

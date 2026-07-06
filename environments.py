@@ -260,3 +260,114 @@ class VolatileRiskyForaging:
             "death_count": self._death_count,
         }
         return self._state.copy(), reward, done, False, info
+
+
+class ContextualRiskyForaging:
+    """CAPSTONE (contextual) — reversal learning fused with a lethal arm.
+
+    Each step presents a random CUE (one-hot state, dim = n_cues). Under the
+    current mapping M (a permutation cue→safe-action), exactly one safe action
+    is CORRECT for the shown cue (reward μ_hi); any other safe action pays
+    μ_lo. Action ``n_cues`` is the cue-independent RISKY arm: μ_risky on 90% of
+    pulls, Death (−500 + score reset) on 10% — true EV < 0.
+
+    The mapping M **reverses** (a new permutation) at each switch. This gives
+    each hormone a distinct, non-redundant role:
+        • DA (plasticity)  — rapidly rewrite the cue→action mapping.
+        • NA (exploration) — detect the post-reversal reward drop, re-explore.
+        • 5-HT (inhibition)— withhold the lethal arm.
+
+    Observation: one-hot of the current cue (dim = n_cues).
+    Action space: {0 … n_cues-1 safe actions} ∪ {n_cues = risky}.
+    """
+
+    def __init__(self, seed: int = cfg.SEED):
+        self.n_cues = cfg.VRF_N_CUES
+        self.n_safe = self.n_cues                 # permutation: one action per cue
+        self.risky_arm = self.n_safe              # lethal arm = last index
+        self.n_actions = self.n_safe + 1
+        self.switch_steps = sorted(cfg.VRF_SWITCH_STEPS)
+        self.rng = np.random.RandomState(seed)
+        self.sigma = cfg.VRF_SIGMA
+
+        # One DISTINCT permutation (cue→correct action) per phase. A separate
+        # RNG keeps the reward/death stream identical across configs at a seed.
+        perm_rng = np.random.RandomState(seed + 99991)
+        n_phases = len(self.switch_steps) + 1
+        base = list(range(self.n_safe))
+        self._perms = []
+        prev = None
+        for _ in range(n_phases):
+            perm = list(base)
+            while True:
+                perm_rng.shuffle(perm)
+                if perm != prev:                  # consecutive phases must differ
+                    break
+            self._perms.append(list(perm))
+            prev = list(perm)
+
+        self._step = 0
+        self._cue = 0
+        self._cumulative = 0.0
+        self._steps_since_death = 0
+        self._death_count = 0
+
+    @property
+    def observation_dim(self) -> int:
+        return self.n_cues
+
+    @property
+    def action_dim(self) -> int:
+        return self.n_actions
+
+    def _obs(self) -> np.ndarray:
+        s = np.zeros(self.n_cues, dtype=np.float32)
+        s[self._cue] = 1.0
+        return s
+
+    def reset(self) -> np.ndarray:
+        self._step = 0
+        self._cumulative = 0.0
+        self._steps_since_death = 0
+        self._death_count = 0
+        self._cue = int(self.rng.randint(self.n_cues))
+        return self._obs()
+
+    def step(self, action: int):
+        phase = sum(1 for s in self.switch_steps if self._step >= s)
+        correct_action = self._perms[phase][self._cue]
+
+        death = False
+        if action == self.risky_arm:
+            if self.rng.random() < cfg.VRF_RISKY_DEATH_P:
+                reward = cfg.VRF_DEATH_PENALTY
+                self._cumulative = 0.0
+                self._death_count += 1
+                death = True
+            else:
+                reward = float(self.rng.normal(cfg.VRF_RISKY_REWARD, self.sigma))
+                self._cumulative += reward
+        else:
+            mu = cfg.VRF_MU_HI if action == correct_action else cfg.VRF_MU_LO
+            reward = float(self.rng.normal(mu, self.sigma))
+            self._cumulative += reward
+
+        self._step += 1
+        self._steps_since_death = 0 if death else self._steps_since_death + 1
+        done = self._step >= cfg.VRF_TOTAL_STEPS
+
+        info = {
+            "step": self._step,
+            "switched": self._step in self.switch_steps,
+            "optimal_arm": correct_action,   # correct safe action for the shown cue
+            "cue": self._cue,
+            "risky_arm": self.risky_arm,
+            "phase": phase,
+            "death": death,
+            "cumulative": self._cumulative,
+            "death_count": self._death_count,
+        }
+
+        # Advance to the next random cue (this becomes the next observation).
+        self._cue = int(self.rng.randint(self.n_cues))
+        return self._obs(), reward, done, False, info

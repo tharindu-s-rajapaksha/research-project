@@ -21,7 +21,7 @@ import config as cfg
 from meta_agent import HormonalMetaAgent
 from worker import LocalRLWorker, StaticBaselineWorker
 from environments import (VolatileBandit, HighStakesForaging,
-                          VolatileRiskyForaging)
+                          VolatileRiskyForaging, ContextualRiskyForaging)
 
 
 def _seed_all(seed: int):
@@ -258,14 +258,14 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
 
     _seed_all(seed)
 
-    env = VolatileRiskyForaging(seed=seed)
+    env = ContextualRiskyForaging(seed=seed)
     meta, worker = _make_agent(env.observation_dim, env.action_dim,
                                ablation_cfg, replay_size=cfg.VRF_REPLAY_SIZE,
                                volatility_threshold=cfg.VRF_VOLATILITY_THRESHOLD)
     meta.hard_reset()
 
     state = env.reset()
-    rewards, actions, optimal_arms = [], [], []
+    rewards, actions, optimal_arms, correct = [], [], [], []
     cumulative, deaths, survival_steps = [], [], []
     steps_since_death = 0
 
@@ -285,6 +285,7 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
         rewards.append(reward)
         actions.append(action)
         optimal_arms.append(info["optimal_arm"])
+        correct.append(1 if action == info["optimal_arm"] else 0)
         cumulative.append(info.get("cumulative", 0.0))
         steps_since_death += 1
 
@@ -299,33 +300,31 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
     if not deaths:
         survival_steps.append(cfg.VRF_TOTAL_STEPS)
 
-    # ── Re-adaptation latency to the new good SAFE arm (per switch) ──────
-    # Reuses the Exp 1 logic: steps to re-lock (LOCK_N consecutive pulls) onto
-    # the arm that is optimal in the new phase. An agent hooked on the lethal
-    # arm never locks the safe optimum → worst-case latency, correctly.
-    LOCK_N = 5
+    # ── Re-adaptation latency (per reversal, ACCURACY-based) ─────────────
+    # Contextual task: the correct action depends on the cue, so we cannot use
+    # "consecutive pulls of one arm". Instead, latency = steps after a reversal
+    # until the rolling accuracy (fraction of steps taking the cue's correct
+    # action) first reaches VRF_CRIT_ACCURACY over a VRF_CRIT_WINDOW window.
+    W = cfg.VRF_CRIT_WINDOW
+    crit = cfg.VRF_CRIT_ACCURACY
     switch_steps = sorted(cfg.VRF_SWITCH_STEPS)
     phase_bounds = switch_steps + [cfg.VRF_TOTAL_STEPS]
+    corr = np.asarray(correct, dtype=float)
     per_switch_latency = []
     for k, s_start in enumerate(switch_steps):
-        if s_start >= len(actions):
+        if s_start >= len(corr):
             continue
-        s_end = min(phase_bounds[k + 1], len(actions))
-        target_arm = optimal_arms[s_start]
-        latency = s_end - s_start
-        consecutive = 0
-        for j in range(s_start, s_end):
-            if actions[j] == target_arm:
-                consecutive += 1
-                if consecutive >= LOCK_N:
-                    latency = (j - LOCK_N + 1) - s_start
-                    break
-            else:
-                consecutive = 0
+        s_end = min(phase_bounds[k + 1], len(corr))
+        latency = s_end - s_start          # worst case: never re-adapts
+        for j in range(s_start, s_end - W + 1):
+            if corr[j:j + W].mean() >= crit:
+                latency = j - s_start
+                break
         per_switch_latency.append(latency)
 
     adaptation_latency = (float(np.mean(per_switch_latency))
                           if per_switch_latency else 0.0)
+    overall_accuracy = float(corr.mean()) if len(corr) else 0.0
 
     return {
         "rewards": rewards,
@@ -343,10 +342,12 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
         "gamma": list(meta.history_gamma),
         "adaptation_latency": adaptation_latency,
         "per_switch_latency": per_switch_latency,
+        "accuracy": overall_accuracy,
         "death_count": len(deaths),
         "total_reward": sum(rewards),
         "risky_arm": env.risky_arm,
         "n_safe": env.n_safe,
+        "n_cues": env.n_cues,
         "switch_steps": switch_steps,
         "label": label,
     }

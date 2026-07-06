@@ -147,20 +147,34 @@ EXP2_REPLAY_SIZE    = 5000      # large → retain rare death transitions for le
 # ─────────────────────────────────────────────────────────────────────
 # Experiment 3 — Volatile Risky Foraging  (CAPSTONE: DA + NA + 5-HT together)
 # ─────────────────────────────────────────────────────────────────────
-# Fuses Exp 1 (a moving best arm → NA/DA) with Exp 2 (a lethal high-EV arm →
-# 5-HT). Removing ANY single hormone should lower cumulative reward: NA/DA loss
-# slows re-adaptation to the moving good arm; 5-HT loss lets the agent get hooked
-# on the lethal arm and die. Cumulative reward is the integrative headline metric.
-VRF_N_SAFE_ARMS   = 5           # safe arms (one is "good", the rest meagre)
-VRF_TOTAL_STEPS   = 4_000
-VRF_SWITCH_STEPS  = [500, 1000, 1500, 2000, 2500, 3000, 3500]  # 7 switches
-VRF_MU_HI         = 10.0        # good safe arm mean
-VRF_MU_LO         = 2.0         # other safe arms mean
+# CONTEXTUAL version: each step shows a CUE (one-hot state); each cue has a
+# correct safe action, and the whole cue→action MAPPING reverses at each switch.
+# This gives each hormone a NON-redundant job so removing any one should lower
+# cumulative reward:
+#   • DA (plasticity)  — rapidly REWRITE the cue→action mapping (associative
+#     memory the fast-weights uniquely provide; a stateless bandit did not
+#     exercise this, so DA was redundant there and washed out).
+#   • NA (exploration) — detect the reward drop at a remap and re-explore.
+#   • 5-HT (inhibition)— resist the cue-independent lethal arm.
+# Cumulative reward is the integrative headline metric.
+VRF_N_CUES        = 3           # contexts; also = number of safe actions (a permutation)
+VRF_TOTAL_STEPS   = 6_000
+VRF_SWITCH_STEPS  = [1000, 2000, 3000, 4000, 5000]  # 5 mapping reversals
+VRF_MU_HI         = 10.0        # reward for the CORRECT action given the cue
+VRF_MU_LO         = 2.0         # reward for a wrong safe action
 VRF_SIGMA         = 1.0
 VRF_RISKY_REWARD  = 50.0        # lethal arm payout on a survive pull
 VRF_RISKY_DEATH_P = 0.10        # lethal arm death probability (true EV ≈ −5)
 VRF_DEATH_PENALTY = -500.0
-VRF_REPLAY_SIZE   = 5000        # large → retain rare death transitions (like Exp 2)
+VRF_REPLAY_SIZE   = 600         # SMALL: a big buffer holds contradictory cue→action
+                                # targets from past reversals and poisons learning
+                                # (Full stuck at ~0.3 acc); 600 lets backprop track
+                                # the CURRENT mapping (per-phase acc reaches ~0.9).
+                                # 5-HT's risk-avoidance is unaffected (it uses the
+                                # per-action harm EMA, not the replay buffer).
+VRF_CRIT_ACCURACY = 0.75        # rolling accuracy that counts as "re-adapted"
+VRF_CRIT_WINDOW   = 150         # window for the re-adaptation accuracy criterion
+VRF_N_SAFE_ARMS   = VRF_N_CUES  # (back-compat alias for the stateless class)
 VRF_VOLATILITY_THRESHOLD = 1.0  # NA reward-drop z-bar for THIS task. Much lower than
                                 # the pure bandit's 3.5 because the risky arm's ±50
                                 # survive rewards inflate the reward variance (the

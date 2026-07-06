@@ -222,6 +222,29 @@ def _norm_scores(battery):
     return scores
 
 
+def _norm_errors(battery):
+    """Per-seed 95% CI on each axis, expressed in the SAME normalized units as
+    the scatter points (so the whiskers are comparable to the marker spread).
+
+    The min-max normalization is affine within each axis, so a raw CI of ±c on
+    latency maps to ±c / (lat_range) in adaptation-score units (and likewise for
+    reward). Returns {label: (xerr_norm, yerr_norm)}.
+    """
+    labels = list(cfg.GENERALIST_CONFIGS.keys())
+    lat_ci = {l: _mean_ci(battery["A_adapt"][l]["Adaptation_Latency"])[1]
+              for l in labels}
+    rew_ci = {l: _mean_ci(battery["B_survive"][l]["Total_Reward"])[1]
+              for l in labels}
+    lat_v = np.array([_mean_ci(battery["A_adapt"][l]["Adaptation_Latency"])[0]
+                      for l in labels])
+    rew_v = np.array([_mean_ci(battery["B_survive"][l]["Total_Reward"])[0]
+                      for l in labels])
+    eps = 1e-9
+    lat_range = lat_v.max() - lat_v.min() + eps
+    rew_range = rew_v.max() - rew_v.min() + eps
+    return {l: (lat_ci[l] / lat_range, rew_ci[l] / rew_range) for l in labels}
+
+
 # ======================================================================
 # Plots
 # ======================================================================
@@ -234,6 +257,7 @@ def plot_generalist_scatter(battery, filename="generalist_scatter.png"):
     each specialist stranded on one failing edge."""
     os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
     scores = _norm_scores(battery)
+    errors = _norm_errors(battery)
 
     fig, ax = plt.subplots(figsize=(8, 7.5))
     # Shade the "generalist zone" (good on both) top-right.
@@ -244,6 +268,11 @@ def plot_generalist_scatter(battery, filename="generalist_scatter.png"):
 
     for label, (ax_n, sv_n, lat, rew) in scores.items():
         is_full = (label == _FULL)
+        xerr, yerr = errors[label]
+        # 95% CI whiskers (per-seed spread) drawn under the marker.
+        ax.errorbar(ax_n, sv_n, xerr=xerr, yerr=yerr, fmt="none",
+                    ecolor=_COLORS.get(label, "#555"), elinewidth=1.4,
+                    capsize=3, capthick=1.4, alpha=0.55, zorder=3)
         ax.scatter(ax_n, sv_n, s=520 if is_full else 300,
                    marker="*" if is_full else "o",
                    color=_COLORS.get(label, "#555"),
@@ -271,6 +300,9 @@ def plot_generalist_scatter(battery, filename="generalist_scatter.png"):
     ax.set_title("Integration beats single-modulator gating\n"
                  "Only the Full tri-hormone agent is competent on both tasks",
                  fontsize=12, fontweight="bold")
+    ax.text(0.99, -0.075, f"whiskers = 95% CI across {len(cfg.SEEDS)} seeds",
+            transform=ax.transAxes, ha="right", va="top", fontsize=8,
+            color="#888", style="italic")
     plt.tight_layout()
     fpath = os.path.join(cfg.RESULTS_DIR, filename)
     fig.savefig(fpath, dpi=cfg.PLOT_DPI, bbox_inches="tight")

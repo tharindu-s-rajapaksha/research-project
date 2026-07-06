@@ -37,13 +37,13 @@ def main():
     # ── Generalist vs specialists study (the integration-novelty test) ──
     if args.generalist:
         print("=" * 60)
-        print("  Generalist vs Specialists — integration novelty test")
+        print("  Generalist vs Specialists - integration novelty test")
         print(f"  Seeds: {cfg.SEEDS} | workers={args.workers}")
         print("=" * 60)
         t0 = time.time()
         run_generalist_study(seeds=cfg.SEEDS, n_workers=args.workers,
                              force_cpu=not args.gpu)
-        print(f"\n  Done in {time.time() - t0:.1f}s → {cfg.RESULTS_DIR}")
+        print(f"\n  Done in {time.time() - t0:.1f}s -> {cfg.RESULTS_DIR}")
         return
 
     print("=" * 60)

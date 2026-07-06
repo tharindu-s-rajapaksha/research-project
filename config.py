@@ -231,6 +231,24 @@ ABLATION_CONFIGS = {
 }
 
 # ─────────────────────────────────────────────────────────────────────
+# Single-modulator baselines — the "generalist vs specialists" study.
+# Tests the interim novelty (Slides 3/6/7): the INTEGRATED tri-hormone
+# agent beats every SINGLE-modulator agent, because each specialist has a
+# fatal blind spot — no serotonin ⇒ walks into the lethal arm on the
+# SURVIVAL task; no adaptation hormones ⇒ slow on the VOLATILE task. The
+# battery runs each agent across BOTH the adaptation task (Exp 1) and the
+# survival task (Exp 2); only the Full agent is competent on both, which is
+# the direct test of "integration beats single-modulator gating".
+# See generalist.py.
+# ─────────────────────────────────────────────────────────────────────
+GENERALIST_CONFIGS = {
+    "Full Model": {"DA": True,  "NA": True,  "5HT": True},
+    "DA only":    {"DA": True,  "NA": False, "5HT": False},
+    "NA only":    {"DA": False, "NA": True,  "5HT": False},
+    "5-HT only":  {"DA": False, "NA": False, "5HT": True},
+}
+
+# ─────────────────────────────────────────────────────────────────────
 # Visualization
 # ─────────────────────────────────────────────────────────────────────
 ROLLING_WINDOW = 100            # Rolling average window for reward plots

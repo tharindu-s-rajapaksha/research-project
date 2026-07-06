@@ -30,22 +30,28 @@ Final standing (10 seeds, all experiments complete):
   result. (Framing correction: the risky arm is *negative-EV* (−5 < +5), so 5-HT
   reaches the **true reward optimum** a plain DQN misses — it does not sacrifice
   reward for safety; see §6.1.)
-- **Experiment 3 — Volatile Risky Foraging (CAPSTONE, replaces CartPole).** An
+- **Experiment 3 — Volatile Risky Foraging (CAPSTONE, replaces CartPole), 10 seeds.** An
   integrative task fusing volatility (a moving good arm → NA/DA) with lethal risk (a
-  tempting negative-EV arm → 5-HT). Headline = cumulative reward. Seed-42 pilot after
-  the Phase-3 tuning: **Full beats every ablation** — vs Ablated-NA +59%, vs Ablated-DA
-  +32%, vs Ablated-5HT +180%, vs Static +147% — i.e. removing *any* hormone is worse
-  (the multi-hormone synergy claim). Full 10-seed confirmation pending.
+  tempting negative-EV arm → 5-HT). Headline = cumulative reward. **Full significantly
+  beats standard RL** (vs Static & Vanilla: reward +14.2k vs −11.4k, Holm p=0.002; also
+  wins latency and deaths), and **5-HT is necessary and sufficient** (removing it → −14.2k,
+  338 deaths, all p≈0). **BUT NA and DA are *not* individually necessary here** (Full vs
+  Ablated-NA/DA p=1.0) — the lethal arm's variance masks their adaptation role. A seed-42
+  pilot suggested otherwise but did not survive 10 seeds. → an "integration win", not an
+  "every-hormone-necessary" result; the latter is deferred to a redesign (approach 2).
 - **(Legacy, secondary/negative) CartPole.** Retained via `run_experiment_cartpole`:
   DA-gated plasticity *impairs* stable continuous control (only 2/10 DA-on seeds reach
   competence vs 8/10 with DA off; Full reward significantly below Static/Vanilla). A
   useful contrast — plasticity helps discrete re-mapping but hurts continuous control.
 
 **One-line takeaway:** each neuromodulator is isolated on its own task (NA→Exp 1,
-5-HT→Exp 2), and the **capstone (Exp 3) shows they are synergistic** — the full agent
-needs all three at once to both adapt to volatility and survive the lethal option,
-massively beating the static baseline and vanilla DQN. The CartPole negative is kept as
-an honest boundary condition on where weight-level plasticity helps.
+5-HT→Exp 2), and the **capstone (Exp 3) shows the full agent massively beats standard RL**
+in a combined volatility+risk world (+14.2k vs −11.4k, Holm p=0.002). In that integrated
+task the win is carried by 5-HT (survival); NA and DA are *not* individually necessary
+there (their adaptation role is masked by the gamble's variance — see §6.3), so the
+capstone is an **integration win, not an all-three-necessary result**. Making all three
+individually necessary in one task is the open follow-up (approach 2). The CartPole
+negative is kept as an honest boundary on where weight-level plasticity helps.
 
 > ⚠️ **The §6 result tables below are from the Phase-2 config.** A Phase-3 tuning pass
 > (§5B) has since improved every mechanism in pilot runs; the on-disk CSVs
@@ -324,32 +330,40 @@ is **risky**: it pays +50 on 90% of pulls but kills (−500 + score reset) on 10
 EV ≈ −5, a trap (→ 5-HT). Headline metric = **cumulative reward** (integrates adaptation
 *and* survival); secondary = death count, re-adaptation latency. Runner: `run_experiment_3`.
 
-**Why each hormone is needed:** NA detects the switch (reward drop) and re-explores; DA
-re-locks the new good arm via plastic fast-weights; 5-HT resists the lethal arm. Removing
-any one should lower cumulative reward.
+**Intended role of each hormone:** NA detects the switch (reward drop) and re-explores;
+DA re-locks the new good arm via plastic fast-weights; 5-HT resists the lethal arm.
 
-**Seed-42 pilot (post Phase-3 tuning; full 10-seed run pending):**
+**FINAL 10-seed results (Holm-corrected paired tests vs Full):**
 
-| Config | Cumulative reward | Full is … |
-|---|---|---|
-| **Full Model** | **14,942** | — |
-| Ablated NA | 9,373 | +59% (NA needed) |
-| Ablated DA | 11,313 | +32% (DA needed) |
-| Ablated 5-HT | −18,633 | +180% (5-HT needed) |
-| Static Baseline | −31,462 | +147% |
+| Config | Cumulative reward (±95% CI) | Deaths | Adapt latency | vs Full (reward, Holm) |
+|---|---|---|---|---|
+| **Full Model** | **14,247 ± 2,993** | 26 | 226 | — |
+| Ablated NA | 14,537 ± 2,238 | 21.7 | 223 | p=1.0 (no diff) |
+| Ablated DA | 13,763 ± 1,009 | 24.8 | 218 | p=1.0 (no diff) |
+| Ablated 5-HT | −14,228 ± 5,312 | 338 | 494 | **p<0.001** ✓ |
+| Static Baseline | −11,422 ± 11,275 | 280 | 462 | **p=0.002** ✓ |
+| Vanilla DQN | −11,422 ± 11,275 | 280 | 462 | **p=0.002** ✓ |
 
-**Interpretation:** the full multi-hormone agent beats every single-hormone ablation —
-removing NA or DA slows re-adaptation (moderate loss), removing 5-HT causes lethal-arm
-deaths (catastrophic loss). This is the **multi-hormone synergy** result the project's
-novelty rests on. *Caveat:* achieving individual NA/DA necessity required the Phase-3
-tuning (low ε_base so NA's exploration is load-bearing; a higher, more selective NA
-volatility threshold). Confirm with the 10-seed paired/Holm-corrected run before quoting.
+**What the 10-seed run establishes (honest):**
+- ✅ **The full multi-hormone agent significantly beats standard RL.** vs Static *and*
+  Vanilla it wins on reward (Holm p=0.002), adaptation latency (226 vs 462, p=0.001) and
+  deaths (26 vs 280, p=0.003). This is the headline integration result.
+- ✅ **5-HT is necessary and sufficient for the win.** Removing it flips reward
+  +14,247→−14,228, deaths 26→338, survival 151→12, latency 226→494 — all p≈0 Holm.
+- ❌ **NA and DA are NOT individually necessary here** (Full vs Ablated-NA p=1.0; vs
+  Ablated-DA p=1.0). A seed-42 pilot had suggested +59%/+32% for NA/DA, but this **did
+  not survive 10 seeds** — it was seed-specific noise.
 
-**Design tension (worth a sentence in Discussion):** the rare −500 death and the +50
-gamble are high-variance events that can *swamp* NA's reward-change detector and keep
-DA's plasticity saturated "on"; the tuning (and excluding catastrophic rewards from NA's
-volatility history) is what lets all three coexist. Combining risk with volatility in one
-task is genuinely harder than either alone.
+**Interpretation / design tension (Discussion material):** the rare −500 death and the
++50 gamble are high-variance events that *swamp* NA's reward-change detector and keep
+DA's plasticity saturated "on"; in this integrated task the survival imperative (5-HT)
+dominates and the adaptation modulators (NA/DA) — which are load-bearing in the *clean*
+bandit (Exp 1) — add nothing measurable. **Combining risk with volatility in one task is
+genuinely harder than either alone**, and is why NA/DA individual necessity is shown in
+Exp 1, not here. Making all three individually necessary in one task is deferred to a
+follow-up redesign (see below). *Sanity note:* Static and Vanilla are byte-identical —
+with no 5-HT both agents get hooked on the risky arm and die on the same env-seeded steps;
+re-verify this is genuine and not accidental aliasing during the redesign.
 
 ### 6.4 Legacy — CartPole (DA on continuous control), n=10 ❌ negative (kept as contrast)
 
@@ -470,9 +484,10 @@ non-stationary environments; (v) more seeds for the marginal NA effects.
 python main.py --workers 12
 
 # Per experiment (writes summary_multiseed_expN.csv, pvalues_expN.csv)
-python main.py --exp 1 --workers 12   # Bandit (NA)      — fast
-python main.py --exp 2 --workers 12   # Foraging (5-HT)  — fast
-python main.py --exp 3 --workers 12   # CartPole (DA)    — slow (~bulk of runtime)
+python main.py --exp 1 --workers 12   # Bandit (NA)              — fast
+python main.py --exp 2 --workers 12   # Foraging (5-HT)          — fast
+python main.py --exp 3 --workers 12   # Risky Foraging (capstone) — fast
+# Legacy CartPole negative result: call experiments.run_experiment_cartpole directly.
 ```
 Workers run on CPU by default (these tiny nets are ~2× faster per-run on CPU than
 GPU; measured 25.6s vs 47.3s for one bandit run). Outputs land in `research_results/`:
@@ -482,4 +497,102 @@ summary/p-value CSVs. Key modules: `neuromodulators.py` (sensing), `meta_agent.p
 + 5-HT pathways), `experiments.py` (protocols/metrics), `evaluation.py` (stats/plots),
 `ablation.py` (multi-seed runner).
 ```
-```
+
+---
+
+## 12. Development chronology (in order: what was done → what it showed → what came next)
+
+A step-by-step record of how the project evolved, written for the dissertation's
+**Implementation / Iteration** narrative and for the viva ("how did you get here?").
+Each stage lists the **action**, the **rationale**, and the **result**.
+
+### Stage 0 — Baseline audit *(starting point)*
+- **Action:** full, file-by-file audit of the original code against the interim
+  spec/hypothesis, before changing anything.
+- **Result:** the original headline results were **artifacts of defects**, not real effects
+  — four critical (γ collapses to ≈0.5·γ_base at rest; the Exp-1 adaptation metric counts
+  the wrong arm; the "static baseline" differs from the Full model in ~4 ways at once; the
+  p-values are single-seed pseudoreplication) plus several high-severity issues (§2).
+- **Decision:** fix validity first, *then* judge the science.
+
+### Stage 1 — Validity fixes (Phase 1)
+- **Action:** fixed every soundness bug — γ now rests at γ_base (5-HT only lengthens the
+  horizon); Exp-1 latency measured per-switch against the *correct* new arm; a single
+  same-architecture worker for all configs (the "static baseline" = that worker frozen);
+  competence-gated recovery; a **multi-seed harness** with paired tests, 95% CIs and
+  Holm correction; added an Ablated-DA config; stopped the frozen target network mutating
+  its Hebbian trace.
+- **Result:** with the bugs gone, the **original mechanisms did not beat standard RL**, and
+  the previously-reported "5-HT survival win" **disappeared** — it had been an artifact of
+  the γ bug (serotonin was only rescuing the agent from a broken resting discount).
+- **Decision:** the mechanisms, as specified, don't influence behaviour enough → redesign.
+
+### Stage 2 — Mechanism redesign (Phase 2)
+- **Action:** re-engineered how each hormone acts on behaviour:
+  - **NA → ε-greedy exploration rate** (replaced softmax temperature, which is scale-
+    sensitive and near-random when Q-values are close, e.g. CartPole).
+  - **5-HT → behavioural inhibition** — a per-action "harm-history" penalty subtracted at
+    action selection, plus a punishment-weighted loss (previously 5-HT only touched γ and
+    suppressed DA, never the policy, so it could not produce harm aversion).
+  - **DA → dopamine-gated plasticity** (gate = 0 at rest so the net behaves as a standard
+    DQN; opens on prediction-error surprise) + matched `nn.Linear` init so the gate-off
+    plastic net is identical to a plain layer.
+- **Result (10 seeds): two clean wins + one honest negative.**
+  - Exp 1 (bandit, NA): Full beats Vanilla DQN — ~19% faster re-locking after a switch
+    (Holm p≈0.001); on the bandit DA/plasticity was the bigger contributor.
+  - Exp 2 (foraging, 5-HT): removing 5-HT → **5.2× more deaths**, reward +13.8k → −20.6k
+    (p<10⁻⁶). Necessary and sufficient for survival.
+  - Exp 3 (CartPole, DA): DA-gated plasticity **impairs** stable continuous control
+    (only 2/10 DA-on seeds reach competence vs 8/10 with DA off). A genuine negative.
+
+### Stage 3 — Replace CartPole with an integrative capstone
+- **Rationale:** CartPole didn't support the hypothesis (plasticity hurts continuous
+  control) and *nothing* tested the project's core **multi-hormone** novelty. Goal: one
+  task that needs all three hormones at once.
+- **Action:** built `VolatileRiskyForaging` = Exp 1 (a moving good arm) fused with Exp 2
+  (a tempting, negative-EV lethal arm); rewrote `run_experiment_3`; kept the CartPole
+  runner as `run_experiment_cartpole` (secondary/negative); rewired evaluation, plots and
+  statistics; later wired the **live pygame view** to the new task as well.
+
+### Stage 4 — Capstone pilot *(first attempt)*
+- **Result (2-seed pilot):** **only 5-HT** came out necessary. Full == Ablated-NA
+  *bit-for-bit* (NA never fired) and Ablated-DA was slightly *better* than Full (DA mildly
+  hurting).
+- **Diagnosis:** the lethal arm's ±extreme rewards (a) **swamp the variance** in NA's
+  reward-change detector, so a switch's modest reward dip never crosses the alarm
+  threshold, and (b) keep DA's plasticity **saturated "on"** — the same regime that made it
+  hurt on CartPole. In short, the rare-catastrophe structure that *makes 5-HT necessary*
+  actively *sabotages NA and DA*.
+
+### Stage 5 — NA robustness fix + tuning
+- **Action:** excluded catastrophic (death) rewards from NA's volatility history (they are
+  5-HT's domain, not NA's); tuned ε_base down (0.1 → 0.01, so the base agent is near-greedy
+  and NA's exploration boost becomes load-bearing) and raised/made-selective the NA
+  volatility threshold (3.5) so NA fires on genuine switches, not ε-greedy noise.
+- **Result (seed-42 pilot):** looked excellent — Full beat *every* ablation (vs NA +59%,
+  DA +32%, 5-HT +180%). Suggested all three were now individually necessary.
+
+### Stage 6 — Full 10-seed capstone run *(reality check)*
+- **Action:** ran the capstone across 10 seeds with paired, Holm-corrected tests.
+- **Result:**
+  - ✅ Full **massively beats standard RL** — vs Static *and* Vanilla on reward
+    (+14.2k vs −11.4k, Holm p=0.002), adaptation latency (226 vs 462, p=0.001) and deaths
+    (26 vs 280, p=0.003).
+  - ✅ 5-HT **necessary and sufficient** — removing it flips reward to −14.2k, deaths to
+    338, survival 151→12 (all p≈0).
+  - ❌ NA and DA **not individually necessary** (Full vs Ablated-NA p=1.0; vs Ablated-DA
+    p=1.0). The seed-42 pilot did **not** survive 10 seeds — it was seed-specific noise.
+- **Conclusion:** the capstone is an **integration win** ("multi-hormone agent beats
+  standard RL"), *not* an "every-hormone-individually-necessary" result. Honest, and it
+  cleanly motivates the next step.
+
+### Stage 7 — Approach 2 *(next — make NA and DA individually necessary)*
+- **Goal:** a task where removing NA or DA is *also* individually worse, robustly across
+  seeds — the strongest form of the synergy claim.
+- **Planned actions (to validate one at a time):** (1) make NA's detector track only the
+  *safe-arm* reward stream (fully decouple volatility sensing from the gamble's variance);
+  (2) make the adaptation genuinely *hard* (more safe arms / faster switches) so a near-
+  greedy base fails without NA and backprop can't re-learn fast enough without DA
+  plasticity; (3) if still masked, *separate* the three demands via context cues so each
+  hormone owns a non-overlapping niche. Success criterion: each single-hormone ablation is
+  significantly worse than Full on ≥10 seeds (Holm-corrected).

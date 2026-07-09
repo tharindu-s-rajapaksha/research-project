@@ -13,6 +13,10 @@ Run:  python test_invariants.py      (asserts; exits non-zero on failure)
    or pytest test_invariants.py
 """
 
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import config as cfg
 from meta_agent import HormonalMetaAgent
 from evaluation import _holm
@@ -46,8 +50,8 @@ def test_holm_monotone_and_capped():
     assert abs(adj[1] - 0.08) < 1e-12, adj
     assert abs(adj[2] - 0.5) < 1e-12, adj
     # Monotone non-decreasing in sorted order and capped at 1.
-    assert _holm([0.9, 0.9]) == [1.0, 1.0]
-    assert _holm([]) == []
+    assert list(_holm([0.9, 0.9])) == [1.0, 1.0]
+    assert list(_holm([])) == []
 
 
 if __name__ == "__main__":

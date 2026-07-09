@@ -46,6 +46,10 @@ python main.py --exp 1 --workers 12
 python main.py --exp 2 --workers 12
 python main.py --exp 3 --workers 12
 ```
+#### Generalist vs. Specialists Study (10 seeds)
+```bash
+python main.py --generalist --workers 12
+```
 Workers run on CPU by default (faster for tiny nets than GPU). Results: `research_results/*.csv`, dashboards, regret curves.
 
 *Note: Add `--merge` to any of the above to combine results into a single chart file.*

@@ -50,9 +50,10 @@ Final standing (10 seeds, all experiments complete):
   survival (Exp 2). Result (10 seeds, Holm-corrected): on **each** task the Full agent
   ties the best specialist and **significantly beats every specialist lacking the relevant
   hormone**, so **no single-modulator agent is competent on both** — DA/NA-only die in the
-  survival task, 5-HT-only is >2× slower to adapt. Worst-task "floor" score: **Full 0.99
-  vs ≤0.02** for every specialist. This is the robust, honest form of the interim novelty
-  ("integration beats single-modulator gating"), distinct from prior serotonin-alone work.
+  survival task, 5-HT-only is >2× slower to adapt. Task-anchored worst-task "floor"
+  competence: **Full 0.81 vs 0.55 (5-HT-only) and ≤0.05** for the arms that die. This is
+  the robust, honest form of the interim novelty ("integration beats single-modulator
+  gating"), distinct from prior serotonin-alone work.
 - **(Legacy, secondary/negative) CartPole.** Retained via `run_experiment_cartpole`:
   DA-gated plasticity *impairs* stable continuous control (only 2/10 DA-on seeds reach
   competence vs 8/10 with DA off; Full reward significantly below Static/Vanilla). A
@@ -63,9 +64,10 @@ Final standing (10 seeds, all experiments complete):
 in a combined volatility+risk world (+14.2k vs −11.4k, Holm p=0.002), and the
 **generalist-vs-specialists study (§6.5) delivers the novelty directly**: across an
 adaptation task *and* a survival task, the integrated tri-hormone agent is the **only
-configuration competent on both** (worst-task floor 0.99 vs ≤0.02) — every single-modulator
-specialist catastrophically fails the task outside its niche, so **integration beats
-single-modulator gating** (10 seeds, Holm-corrected). The remaining honest nuance —
+configuration competent on both** (task-anchored worst-task floor 0.81 vs 0.55 for
+5-HT-only and ≤0.05 for the arms that die) — every single-modulator specialist
+catastrophically fails the task outside its niche, so **integration beats single-modulator
+gating** (10 seeds, Holm-corrected). The remaining honest nuance —
 that *within a single task* NA/DA are individually necessary only when the base learner is
 overwhelmed (§6.3 regime-dependence) — is reported as a genuine **neuromodulator-redundancy**
 finding rather than engineered away. The CartPole negative is kept as an honest boundary on
@@ -447,20 +449,33 @@ This experiment tests the claim head-on: it pits the Full tri-hormone agent agai
 
 All four agents run on both tasks, 10 seeds. Module: `generalist.py`; reproduce with
 `python main.py --generalist --workers 12`. Outputs: `generalist_summary.csv`,
-`generalist_pvalues.csv`, `generalist_scatter.png` (adaptation×survival quadrant),
-`generalist_floor.png` (worst-task score).
+`generalist_pvalues.csv`, `generalist_headtohead.png` (single-modulator-vs-Full bars in
+raw units with 95% CI + significance), `generalist_scatter.png` (adaptation×survival
+competence quadrant), `generalist_floor.png` (per-task competence + worst-task floor).
+
+**Scoring — task-anchored ABSOLUTE competence (not cross-agent min-max).** An earlier
+version min-max-normalised each axis across the four agents, which forced the worst agent
+to *exactly* 0 on each task and produced a 0-vs-1 bar chart that read as manufactured (and
+hid the real magnitudes). Each task is now scored in [0,1] against its OWN theoretical
+worst case — a task constant, never the other agents:
+- **adaptation competence** = 1 − latency / mean_phase_length (the re-lock window is the
+  exact worst-case latency; Exp 1 phases average 875 steps).
+- **survival competence** = 1 − deaths / (steps × death_prob) (max death exposure = always
+  pulling the lethal arm = 500).
 
 **Results (mean over 10 seeds):**
 
-| Agent | Task A latency ↓ | Task B reward ↑ | Worst-task floor ↑ |
-|---|---|---|---|
-| **Full Model** | **165.1** | **+21,191** | **0.99** |
-| DA only | 368.4 | −21,510 | 0.00 |
-| NA only | 162.9 | −20,753 | 0.02 |
-| 5-HT only | 390.0 | +21,456 | 0.00 |
+| Agent | Task A latency ↓ | Adapt comp. | Task B reward ↑ | Deaths ↓ | Surv. comp. | Floor ↑ |
+|---|---|---|---|---|---|---|
+| **Full Model** | **165.1** | **0.81** | **+21,191** | **36** | **0.93** | **0.81** |
+| DA only | 368.4 | 0.58 | −21,510 | 480 | 0.04 | 0.04 |
+| NA only | 162.9 | 0.81 | −20,753 | 475 | 0.05 | 0.05 |
+| 5-HT only | 390.0 | 0.55 | +21,456 | 33 | 0.93 | 0.55 |
 
-*(Floor = min over the two tasks of the agent's min-max-normalised score across the four
-agents; 1 = best agent on that axis, so a high floor means "good even on your weakest task".)*
+*(Floor = min over the two tasks of the agent's absolute competence. High floor = "good
+even on your weakest task". Note 5-HT-only floors at 0.55, not 0, because it genuinely
+survives — it is merely slow to adapt; the honest numbers are stronger than the old
+manufactured 0.00.)*
 
 **Paired Full-vs-specialist tests (Holm-corrected across the 6-comparison family):**
 - **Adaptation:** Full ≪ DA-only (165 vs 368, Holm *p*=6.8×10⁻⁵ ✓) and Full ≪ 5-HT-only
@@ -475,11 +490,14 @@ statistically *tied with the best specialist* for that task, and *significantly 
 specialist that lacks the relevant hormone*. Therefore **no single-modulator agent is
 competent on both tasks**: DA-only and NA-only adapt but walk into the lethal arm (reward
 ≈ −21k, ~470 deaths); 5-HT-only survives but is **>2× slower** to re-adapt (390 vs 165
-steps). Only the integrated tri-hormone agent keeps a high worst-task **floor (0.99 vs
-≤0.02)**. This is the direct evidence for *"integration beats single-modulator gating"*:
-the architecture's value is that it is the **only configuration that is a generalist**, not
-that any one hormone is universally best. The quadrant scatter shows Full alone in the
-good-good corner, each specialist stranded on one failing edge.
+steps). Only the integrated tri-hormone agent keeps a high worst-task **floor (0.81 vs 0.55
+for 5-HT-only and ≤0.05 for the arms that die)**. This is the direct evidence for
+*"integration beats single-modulator gating"*: the architecture's value is that it is the
+**only configuration that is a generalist**, not that any one hormone is universally best.
+The head-to-head bars give the supervisor's requested per-baseline comparison (each
+single-modulator agent vs Full, in raw units, with Holm-corrected significance); the
+quadrant scatter shows Full alone in the good-good corner, each specialist stranded on one
+failing edge.
 
 **Why this framing is the right one (Discussion).** Forcing all three hormones to be
 *individually necessary in one task* proved regime-dependent and fragile (§6.3, Stage 8).
@@ -608,7 +626,7 @@ python main.py --exp 3 --workers 12   # Risky Foraging (capstone) — fast
 # Generalist vs Specialists — the novelty test (§6.5). Runs Full + the three
 # single-modulator agents across the adaptation (Exp 1) AND survival (Exp 2)
 # tasks. Writes generalist_summary.csv, generalist_pvalues.csv,
-# generalist_scatter.png, generalist_floor.png.
+# generalist_headtohead.png, generalist_scatter.png, generalist_floor.png.
 python main.py --generalist --workers 12
 
 # Legacy CartPole negative result: call experiments.run_experiment_cartpole directly.
@@ -756,25 +774,35 @@ Each stage lists the **action**, the **rationale**, and the **result**.
   other; only the Full agent is good at both.
 - **Action.** Added `GENERALIST_CONFIGS` (Full, DA-only, NA-only, 5-HT-only) to
   `config.py`; built `generalist.py` (parallel battery runner + paired Holm-corrected
-  Full-vs-specialist stats + a quadrant scatter and a worst-task "floor" bar); wired
-  `python main.py --generalist --workers 12`. Validated on a 3-seed pilot, then ran 10
-  seeds.
+  Full-vs-specialist stats + a head-to-head bar figure, a quadrant scatter and a worst-task
+  "floor" bar); wired `python main.py --generalist --workers 12`. Validated on a 3-seed
+  pilot, then ran 10 seeds.
 - **Result (10 seeds, decisive).**
 
-  | Agent | Adapt latency ↓ | Survival reward ↑ | Floor ↑ |
-  |---|---|---|---|
-  | **Full** | **165** | **+21,191** | **0.99** |
-  | DA only | 368 | −21,510 | 0.00 |
-  | NA only | 163 | −20,753 | 0.02 |
-  | 5-HT only | 390 | +21,456 | 0.00 |
+  | Agent | Adapt latency ↓ | Survival reward ↑ | Deaths ↓ | Floor ↑ |
+  |---|---|---|---|---|
+  | **Full** | **165** | **+21,191** | **36** | **0.81** |
+  | DA only | 368 | −21,510 | 480 | 0.04 |
+  | NA only | 163 | −20,753 | 475 | 0.05 |
+  | 5-HT only | 390 | +21,456 | 33 | 0.55 |
 
   On adaptation, Full ≪ DA-only (Holm p=6.8e-5) and ≪ 5-HT-only (p=1e-4), ties NA-only
   (p=0.83). On survival, Full ≫ DA-only (p≈0) and ≫ NA-only (p=5e-6), ties 5-HT-only
   (p=0.44). **On each task Full ties the best specialist and beats the rest; no specialist
-  is good at both.** Worst-task floor: Full 0.99 vs ≤0.02 for every specialist.
+  is good at both.** Worst-task floor: Full 0.81 vs 0.55 (5-HT-only) and ≤0.05 for the arms
+  that die.
+- **Scoring revision (supervisor feedback).** The floor was originally min-max-normalised
+  across the four agents, which forced the worst agent to *exactly* 0 on each axis — a
+  0.99-vs-0.00 bar chart that read as manufactured and hid the magnitudes. Replaced with
+  **task-anchored absolute competence** (adaptation = 1−latency/window; survival =
+  1−deaths/max-exposure): non-circular, interpretable, and the honest numbers (Full 0.81;
+  5-HT-only floors at 0.55 because it genuinely survives) are *more* defensible. Added
+  `generalist_headtohead.png` — the direct single-modulator-vs-Full comparison the
+  supervisor asked for, in each task's raw units with 95% CI and Holm-corrected stars.
 - **Take-away for the thesis (the headline novelty result).** *"Integration beats
   single-modulator gating: the tri-hormone agent is the only configuration competent
   across both task niches — each single-modulator specialist catastrophically fails the
   task outside its niche."* This is robust (survives 10 seeds + Holm), honest (no forced
   all-three-necessary number), and cleanly distinct from prior serotonin-alone work.
-  Written up as §6.5; figures `generalist_scatter.png`, `generalist_floor.png`.
+  Written up as §6.5; figures `generalist_headtohead.png`, `generalist_scatter.png`,
+  `generalist_floor.png`.

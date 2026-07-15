@@ -166,21 +166,35 @@ gain=1, plastic-gate=0 at rest).
 
 **Statistics.** Each (experiment × config) is run on **10 shared seeds**
 (`SEEDS = 42…51`). For every headline metric we report **mean ± 95% CI**
-(t-based, `evaluation.summarize_multiseed`). Significance uses a **paired t-test**
-(Full vs each config, seeds matched; `evaluation.compute_multiseed_pvalues`),
-dropping seeds where a metric is undefined (e.g. an ungated CartPole recovery).
-Runs are parallelised across CPU processes (`--workers N`); results are reassembled
-in sorted-seed order so pairing stays aligned.
+(t-based, `evaluation.summarize_multiseed`). Significance uses **paired tests**
+(Full vs each config, seeds matched; `evaluation.compute_multiseed_pvalues`):
+a **paired t-test AND a Wilcoxon signed-rank** (`_paired_p`) — the latter is the
+distribution-free test reported for the count/capped metrics (`Death_Count`,
+`Adaptation_Latency`) where normality is shaky at n=10. Both are **Holm–Bonferroni
+corrected** within each experiment's family (columns `p_holm`, `p_wilcoxon_holm`),
+dropping seeds where a metric is undefined (e.g. an ungated CartPole recovery). Runs
+are parallelised across CPU processes (`--workers N`); results are reassembled in
+sorted-seed order so pairing stays aligned. All quoted numbers are regenerated from
+the CSVs by `tools/make_tables.py` (→ `RESULTS_TABLES.md`), never hand-transcribed.
+
+**Baselines.** The central comparison is Full vs **Static Baseline** (same
+architecture, hormones frozen). **Vanilla DQN** is a plain-MLP anchor that we verified
+comes out **byte-identical** to Static Baseline (a validation of the reduces-to-baseline
+invariant, not an independent data point). Because that shared baseline uses a
+near-greedy ε=0.01 and a Huber loss, a separate **fair-baseline battery**
+(`baselines.py`, §6.6) additionally pits Full against **well-tuned standard DQNs**
+(swept-ε, ε-decay, MSE, reward-scaled), so "beats standard RL" means "beats *tuned*
+standard RL", not a strawman.
 
 **Metrics.**
 - *Exp 1 (bandit):* **Adaptation latency** = mean over switches of the steps to
-  re-lock (5 consecutive pulls) onto the arm that is optimal *in the new phase*;
-  plus cumulative reward.
-- *Exp 2 (foraging):* **Death count**, **Survival rate** (mean steps between deaths),
-  cumulative reward, over 5,000 steps.
-- *Exp 3 (capstone, Volatile Risky Foraging):* **Cumulative reward** (headline —
-  integrates adaptation and survival); plus **death count** and **re-adaptation latency**
-  (same per-switch logic as Exp 1, against the moving good safe arm), over 4,000 steps.
+  re-lock (5 consecutive greedy pulls) onto the arm that is optimal *in the new phase*
+  — note this captures re-lock *and* NA's exploration settling; plus cumulative reward.
+- *Exp 2 (foraging):* **Death count**, **Survival rate** (mean steps between deaths,
+  including the trailing streak), cumulative reward, over 5,000 steps.
+- *Exp 3 (contextual capstone):* **Cumulative reward** (headline) + **accuracy**
+  (fraction of steps taking the cue's correct action) + **death count** +
+  **re-adaptation latency** (accuracy-based, per reversal), over 6,000 steps / 5 reversals.
 - *Legacy (CartPole):* **Recovery time** = episodes after the physics shock to sustain
   ≥300 steps for 3 consecutive episodes — defined only if competent pre-shock (rolling
   ≥350 over the last 20 pre-shock episodes); NaN otherwise.
@@ -727,14 +741,17 @@ This mechanism-by-mechanism, honestly-bounded story is far stronger for a viva t
 
 **Framing the method contribution:** the value is as much the **evaluation protocol**
 (fair same-architecture ablation, reduces-to-baseline invariant, per-seed paired
-statistics, competence-gated recovery) as the mechanisms — it is what let you tell a
-real effect (5-HT) from three bug-induced mirages.
+statistics with Wilcoxon + Holm, fair well-tuned baselines, and honest bounding of each
+claim) as the mechanisms — it is what let us tell a real effect (NA adaptation) from a
+loss-function artefact (5-HT vs a Huber DQN) and from a mirage (DA plasticity).
 
 **Future work:** (i) a learned/meta-optimised meta-controller instead of hand-designed
 laws; (ii) a DA-plasticity gate that distinguishes *environmental change* from
-*ordinary learning error* so plasticity helps recovery without hurting acquisition;
-(iii) sensitivity sweeps over the hand-set thresholds; (iv) richer, higher-dimensional
-non-stationary environments; (v) more seeds for the marginal NA effects.
+*ordinary learning error* so plasticity helps recovery without hurting acquisition (the
+DA-strong probe is a first step); (iii) an NA detector conditioned on the *chosen action*
+so it tracks environmental volatility rather than the agent's own reward-changing choices
+(H4); (iv) sensitivity sweeps over the hand-set thresholds; (v) richer, higher-dimensional
+non-stationary environments.
 
 ---
 
@@ -821,10 +838,13 @@ Each stage lists the **action**, the **rationale**, and the **result**.
     DQN; opens on prediction-error surprise) + matched `nn.Linear` init so the gate-off
     plastic net is identical to a plain layer.
 - **Result (10 seeds): two clean wins + one honest negative.**
-  - Exp 1 (bandit, NA): Full beats Vanilla DQN — ~19% faster re-locking after a switch
-    (Holm p≈0.001); on the bandit DA/plasticity was the bigger contributor.
-  - Exp 2 (foraging, 5-HT): removing 5-HT → **5.2× more deaths**, reward +13.8k → −20.6k
-    (p<10⁻⁶). Necessary and sufficient for survival.
+  - Exp 1 (bandit, NA): Full beats standard RL — faster re-locking after a switch.
+    *(⚠️ Superseded by Stage 10: a later run + tuning shows **NA**, not DA, is the driver —
+    removing NA nearly doubles latency, removing DA does nothing. The Stage-2 "DA was the
+    bigger contributor" reading was a seed-specific artefact; see §6.2.)*
+  - Exp 2 (foraging, 5-HT): removing 5-HT → many more deaths, reward flips positive→negative
+    (p<10⁻⁶). Necessary and sufficient for survival *(vs a Huber-loss DQN — Stage 10 bounds
+    this: a value-corrected DQN survives without 5-HT; see §6.6)*.
   - Exp 3 (CartPole, DA): DA-gated plasticity **impairs** stable continuous control
     (only 2/10 DA-on seeds reach competence vs 8/10 with DA off). A genuine negative.
 
@@ -947,3 +967,46 @@ Each stage lists the **action**, the **rationale**, and the **result**.
   all-three-necessary number), and cleanly distinct from prior serotonin-alone work.
   Written up as §6.5; figures `generalist_headtohead.png`, `generalist_scatter.png`,
   `generalist_floor.png`.
+
+### Stage 10 — Second independent audit + remediation (2026-07-16) ✅
+- **Motivation.** A fresh, file-by-file audit against the interim spec. It confirmed the
+  mechanisms are correctly implemented, but found (a) the write-up **contradicted its own CSVs**
+  on the central Exp-1 claim, (b) two "beats standard RL" wins rested on a **deliberately weak
+  baseline** (near-greedy ε=0.01; Huber-clipped −500), and (c) the flagship **DA plasticity is
+  inert**. Empirically re-verified: Static ≡ Vanilla byte-identical; Exp-1 Full 131 vs
+  Ablated-NA 207 vs Ablated-DA 121 (NA helps, DA doesn't); Exp-2 Full 6.7% risky-pulls vs
+  Ablated-5HT 99.3%.
+- **C1 — narrative vs data (the big fix).** The committed `pvalues.csv` shows **NA** is the
+  isolated Exp-1 driver (Full vs Ablated-NA latency 165 vs 368, Holm p=1.7×10⁻⁴), and DA is
+  inert (p=0.83) — the **opposite** of the earlier "DA is the bigger contributor" prose (a
+  seed-42 pilot artefact). Rewrote §0, §6.1, §6.2, §6.3, §10, and the Stage-2 note to match the
+  data; added `tools/make_tables.py` so every §6 table is **regenerated from the CSVs**
+  (`RESULTS_TABLES.md`) rather than hand-copied — closing the drift that caused C1.
+- **C2/H2 — fair baselines (`baselines.py`, `--baselines`, §6.6).** Added a battery pitting Full
+  against **well-tuned standard DQNs**: swept fixed-ε {0.01…0.2}, a linear **ε-decay**, and two
+  **value-corrected** critics (**MSE**, **reward-scaled**). `StaticBaselineWorker` gained
+  ε-annealing + `loss`/`reward_scale` options (defaults byte-identical, so Vanilla is unchanged).
+  **Pilot findings:** (C2) Full re-locks faster than the *best* fixed-ε **and** ε-decay DQN — the
+  NA/adaptation win is over *tuned* exploration, strengthened. (H2) the value-corrected DQNs
+  **survive Exp 2 without any 5-HT**, so serotonin **repairs a Huber-loss pathology** rather than
+  being universally necessary — the 5-HT claim is now honestly bounded (§6.1, §6.6).
+- **DA reframe + probes (D, F).** DA-plasticity reframed as a **characterized negative** (main
+  path). Added an exploratory `tools/da_strong_probe.py` (higher `PLASTIC_ALPHA_INIT` + hard-
+  regime capstone; `plastic_alpha` now threaded through, default-preserving) as *future work*.
+  Added `tools/bandit_gamma0_probe.py`; it **confirms NA still drives adaptation under γ=0**
+  (Full 164 vs Ablated-NA 503) — the M4 sensitivity check.
+- **Stats hardening (M2).** Added a **Wilcoxon signed-rank** test alongside every paired t-test
+  (`evaluation._paired_p`), Holm-corrected, in the ablation, generalist, and baseline p-value
+  CSVs — the defensible test for the count/capped metrics.
+- **Correctness/cleanup.** Deleted dead single-seed functions that referenced a removed
+  `recovery_time` key (latent `KeyError`, M1); counted the **trailing survival streak** (M5);
+  simplified `_compute_ht_spike` (L1); fixed the `info["switched"]` off-by-one in all three envs
+  (L2); removed unused `meta._death_count` (L3); reconciled all stale constants in §5/§7/§0B to
+  `config.py` (L4).
+- **Validated.** `test_invariants` passes; all modules compile/import; Static ≡ Vanilla identity
+  preserved after the worker refactor; NA-win direction and Wilcoxon columns reproduced on pilots.
+- **Net effect on the thesis.** The **NA/adaptation** win is *stronger* and cleaner; the
+  **5-HT/survival** win is *honestly bounded* to a Huber-loss baseline; **generalist coverage**
+  remains the novelty; **DA** is a documented negative. Every claim now traces to a committed CSV.
+  ⚠️ **Pending (user runs):** the 10-seed `--baselines` study, then `tools/make_tables.py` to fill
+  §6.6's final numbers (the table there is a 2-seed pilot placeholder).

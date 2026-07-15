@@ -62,9 +62,9 @@ python simulation_engine.py --exp <1|2|3> --mode <live|fast|ablation>
 
 **Examples:**
 ```bash
-python simulation_engine.py --exp 1 --mode ablation
-python simulation_engine.py --exp 1 --mode live
-python simulation_engine.py --exp 1 --mode fast
+python simulation_engine.py --exp 3 --mode ablation
+python simulation_engine.py --exp 3 --mode live
+python simulation_engine.py --exp 3 --mode fast
 ```
 
 - **Live Mode (`--mode live`)**: Normal speed playback with Pygame visuals.

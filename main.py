@@ -23,6 +23,7 @@ from evaluation import (summarize_multiseed, compute_multiseed_pvalues,
                         plot_experiment_1, plot_experiment_2,
                         plot_experiment_3, plot_regret_curve)
 from generalist import run_generalist_study
+from baselines import run_baseline_study
 
 
 def main():
@@ -32,7 +33,20 @@ def main():
     parser.add_argument("--workers", type=int, default=1, help="Parallel worker processes for the multi-seed study (>1 enables parallelism; ~= CPU cores)")
     parser.add_argument("--gpu", action="store_true", help="Keep parallel workers on the default device (GPU) instead of forcing CPU")
     parser.add_argument("--generalist", action="store_true", help="Run the 'generalist vs specialists' study (Full + single-modulator agents across the adaptation AND survival tasks) instead of the ablation suite")
+    parser.add_argument("--baselines", action="store_true", help="Run the fair-baseline battery (Full vs well-tuned standard DQNs: swept-eps, eps-decay, MSE, reward-scaled) across the adaptation AND survival tasks — the 'beats standard RL' fairness test")
     args = parser.parse_args()
+
+    # ── Fair-baseline battery (the "beats STANDARD RL" fairness test) ──
+    if args.baselines:
+        print("=" * 60)
+        print("  Fair baselines - Full vs well-tuned standard DQNs")
+        print(f"  Seeds: {cfg.SEEDS} | workers={args.workers}")
+        print("=" * 60)
+        t0 = time.time()
+        run_baseline_study(seeds=cfg.SEEDS, n_workers=args.workers,
+                           force_cpu=not args.gpu)
+        print(f"\n  Done in {time.time() - t0:.1f}s -> {cfg.RESULTS_DIR}")
+        return
 
     # ── Generalist vs specialists study (the integration-novelty test) ──
     if args.generalist:

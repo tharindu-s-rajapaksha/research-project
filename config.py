@@ -249,6 +249,36 @@ GENERALIST_CONFIGS = {
 }
 
 # ─────────────────────────────────────────────────────────────────────
+# Fair-baseline battery — the "beats STANDARD RL" fairness test (baselines.py).
+# The ablation's Static/Vanilla baseline is pinned at a near-greedy ε=0.01 with
+# NO exploration schedule and a Huber loss that gradient-clips the −500
+# catastrophe. That is a WEAK reference: the honest claim is that the
+# self-regulating agent beats the BEST *static* configuration, so this battery
+# pits the Full tri-hormone agent against a spread of properly-tuned standard
+# DQNs on both task niches (adaptation = Exp 1, survival = Exp 2):
+#   • swept fixed-ε and a standard linear ε-decay — the C2 adaptation fairness
+#     check (does NA beat the best fixed/annealed exploration, not just ε=0.01?).
+#   • MSE (no Huber clip) and reward-scaled Huber — the H2 survival fairness
+#     check (does 5-HT beat a value function that ISN'T crippled by Huber
+#     under-weighting the −500?). reward_scale 0.002 maps {+5,+50,−500} →
+#     {0.01,0.1,−1.0}, i.e. the death lands at Huber's balanced knee (~1)
+#     instead of being clipped away.
+# Report whichever way it comes out: if a value-corrected DQN survives Exp 2
+# without 5-HT, that is stated honestly — the fix here is fairness, not a win.
+# ─────────────────────────────────────────────────────────────────────
+BASELINE_CONFIGS = {
+    "Full Model":        {"DA": True, "NA": True, "5HT": True},   # tri-hormone reference
+    "DQN eps=0.01":      {"vanilla": True, "epsilon": 0.01},      # the current weak baseline
+    "DQN eps=0.05":      {"vanilla": True, "epsilon": 0.05},
+    "DQN eps=0.1":       {"vanilla": True, "epsilon": 0.10},
+    "DQN eps=0.2":       {"vanilla": True, "epsilon": 0.20},
+    "DQN eps-decay":     {"vanilla": True, "eps_start": 1.0, "eps_end": 0.05,
+                          "eps_decay_steps": 1000},               # standard annealing
+    "DQN MSE":           {"vanilla": True, "loss": "mse"},        # value-corrected (no clip)
+    "DQN reward-scaled": {"vanilla": True, "reward_scale": 0.002},# value-corrected (Huber knee)
+}
+
+# ─────────────────────────────────────────────────────────────────────
 # Visualization
 # ─────────────────────────────────────────────────────────────────────
 ROLLING_WINDOW = 100            # Rolling average window for reward plots

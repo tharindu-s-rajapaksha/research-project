@@ -67,8 +67,11 @@ class VolatileBandit:
         """
         # Determine current phase based on step count
         phase = sum(1 for s in self.switch_steps if self._step >= s)
+        # `switched` must flag the FIRST step of the new phase — i.e. the entry
+        # step (before the increment below) landing exactly on a switch boundary.
+        just_switched = self._step in self.switch_steps
         self.current_optimal_arm = self.optimal_sequence[phase]
-        
+
         self.current_means = np.full(self.n_arms, cfg.EXP1_REWARD_MU_LO)
         self.current_means[self.current_optimal_arm] = cfg.EXP1_REWARD_MU_HI
         
@@ -82,8 +85,8 @@ class VolatileBandit:
         done = self._step >= cfg.EXP1_TOTAL_STEPS
         
         info = {
-            "step": self._step, 
-            "switched": self._step in self.switch_steps,
+            "step": self._step,
+            "switched": just_switched,
             "optimal_arm": self.current_optimal_arm,
             "phase": phase
         }
@@ -224,6 +227,7 @@ class VolatileRiskyForaging:
         """Execute one pull. Returns (state, reward, done, truncated, info)."""
         # Current phase → which safe arm is good right now.
         phase = sum(1 for s in self.switch_steps if self._step >= s)
+        just_switched = self._step in self.switch_steps  # first step of new phase
         good_arm = self.optimal_sequence[phase]
 
         death = False
@@ -251,7 +255,7 @@ class VolatileRiskyForaging:
 
         info = {
             "step": self._step,
-            "switched": self._step in self.switch_steps,
+            "switched": just_switched,
             "optimal_arm": good_arm,        # the good SAFE arm (never the risky one)
             "risky_arm": self.risky_arm,
             "phase": phase,
@@ -335,6 +339,7 @@ class ContextualRiskyForaging:
 
     def step(self, action: int):
         phase = sum(1 for s in self.switch_steps if self._step >= s)
+        just_switched = self._step in self.switch_steps  # first step of new phase
         correct_action = self._perms[phase][self._cue]
 
         death = False
@@ -358,7 +363,7 @@ class ContextualRiskyForaging:
 
         info = {
             "step": self._step,
-            "switched": self._step in self.switch_steps,
+            "switched": just_switched,
             "optimal_arm": correct_action,   # correct safe action for the shown cue
             "cue": self._cue,
             "risky_arm": self.risky_arm,

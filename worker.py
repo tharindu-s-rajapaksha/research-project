@@ -58,14 +58,18 @@ class LocalRLWorker:
     """
 
     def __init__(self, state_dim: int, action_dim: int, device: torch.device = cfg.DEVICE,
-                 replay_size: int = cfg.REPLAY_SIZE):
+                 replay_size: int = cfg.REPLAY_SIZE,
+                 plastic_alpha_init: float = cfg.PLASTIC_ALPHA_INIT):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.device = device
 
-        # Online & Target networks (with differentiable plasticity)
-        self.policy_net = PlasticNetwork(state_dim, cfg.HIDDEN_DIM, action_dim).to(device)
-        self.target_net = PlasticNetwork(state_dim, cfg.HIDDEN_DIM, action_dim).to(device)
+        # Online & Target networks (with differentiable plasticity). The plastic
+        # coefficient init is tunable for the DA-strong probe; default unchanged.
+        self.policy_net = PlasticNetwork(state_dim, cfg.HIDDEN_DIM, action_dim,
+                                         plastic_alpha_init=plastic_alpha_init).to(device)
+        self.target_net = PlasticNetwork(state_dim, cfg.HIDDEN_DIM, action_dim,
+                                         plastic_alpha_init=plastic_alpha_init).to(device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
@@ -216,18 +220,44 @@ class LocalRLWorker:
 class StaticBaselineWorker:
     """A standard ε-greedy DQN with fixed hyperparameters (no modulation).
 
-    Used as the control condition in ablation studies.
+    Used both as the ablation control condition (``Vanilla DQN``) and as the
+    pool of FAIR reference baselines for the "beats standard RL" claim
+    (``baselines.py``). The extra keyword arguments below all default to values
+    that reproduce the original fixed-ε, Huber-loss behaviour EXACTLY (so the
+    Vanilla-DQN config stays byte-identical to the Static Baseline):
+
+        • eps_start / eps_end / eps_decay_steps — a standard linear ε-annealing
+          schedule (e.g. 1.0 → 0.05 over N action steps). When ``eps_start`` is
+          None (default) ε is the fixed ``epsilon``, as before.
+        • loss ∈ {"huber" (default), "mse"} and ``reward_scale`` — the
+          value-corrected baseline: Huber clips the gradient of the rare −500
+          catastrophe, so a plain DQN under-weights it. MSE (no clipping) or
+          scaling the reward into Huber's balanced range tests whether 5-HT is
+          genuinely necessary or merely fixes that Huber artefact.
     """
 
     def __init__(self, state_dim: int, action_dim: int,
                  device: torch.device = cfg.DEVICE,
                  epsilon: float = cfg.EPSILON_BASE,
-                 replay_size: int = cfg.REPLAY_SIZE):
+                 replay_size: int = cfg.REPLAY_SIZE,
+                 eps_start: float = None, eps_end: float = None,
+                 eps_decay_steps: int = None,
+                 loss: str = "huber", reward_scale: float = 1.0):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.device = device
         self.epsilon = epsilon
         self._replay_size = replay_size
+
+        # Optional linear ε-annealing schedule (None → fixed ε, original behaviour)
+        self._eps_start = eps_start
+        self._eps_end = eps_end if eps_end is not None else epsilon
+        self._eps_decay_steps = eps_decay_steps
+        self._act_count = 0
+
+        # Value-target options (defaults reproduce the original Huber loss exactly)
+        self._loss = loss
+        self._reward_scale = reward_scale
 
         # Standard MLP (no plasticity)
         self.policy_net = nn.Sequential(
@@ -253,8 +283,17 @@ class StaticBaselineWorker:
         self.memory = ReplayBuffer(capacity=replay_size)
         self._step_count = 0
 
+    def _current_epsilon(self) -> float:
+        """Effective ε this step. Fixed by default; a linear anneal from
+        ``eps_start`` to ``eps_end`` over ``eps_decay_steps`` when scheduled."""
+        if self._eps_start is None:
+            return self.epsilon
+        frac = min(1.0, self._act_count / max(1, self._eps_decay_steps))
+        self._act_count += 1
+        return self._eps_start + (self._eps_end - self._eps_start) * frac
+
     def select_action(self, state: np.ndarray, **_kwargs) -> int:
-        if random.random() < self.epsilon:
+        if random.random() < self._current_epsilon():
             return random.randrange(self.action_dim)
         with torch.no_grad():
             s = torch.FloatTensor(state).unsqueeze(0).to(self.device)
@@ -271,6 +310,8 @@ class StaticBaselineWorker:
         states = torch.FloatTensor(np.array(batch.state)).to(self.device)
         actions = torch.LongTensor(batch.action).unsqueeze(1).to(self.device)
         rewards = torch.FloatTensor(batch.reward).to(self.device)
+        if self._reward_scale != 1.0:               # value-corrected baseline
+            rewards = rewards * self._reward_scale
         next_states = torch.FloatTensor(
             np.array(batch.next_state)).to(self.device)
         dones = torch.FloatTensor(batch.done).to(self.device)
@@ -281,7 +322,10 @@ class StaticBaselineWorker:
             target = rewards + cfg.GAMMA_BASE * next_q * (1.0 - dones)
 
         td_error = (target.unsqueeze(1) - q_values).mean().item()
-        loss = F.smooth_l1_loss(q_values, target.unsqueeze(1))
+        if self._loss == "mse":                     # no gradient clipping of the
+            loss = F.mse_loss(q_values, target.unsqueeze(1))   # rare −500 target
+        else:
+            loss = F.smooth_l1_loss(q_values, target.unsqueeze(1))
 
         self.optimizer.zero_grad()
         loss.backward()

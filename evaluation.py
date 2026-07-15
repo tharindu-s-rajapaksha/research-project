@@ -380,6 +380,29 @@ def _mean_ci(vec):
     return mean, ci, n
 
 
+def _paired_p(f_arr, o_arr):
+    """Paired significance for two seed-aligned metric vectors.
+
+    Returns ``(t_stat, p_ttest, p_wilcoxon)``. Identical vectors → (0.0, 1.0, 1.0)
+    (avoids a nan from a degenerate test). The **Wilcoxon signed-rank** p-value is
+    reported alongside the t-test because several headline metrics are counts
+    (``Death_Count``) or capped/bimodal (``Adaptation_Latency`` is capped at the
+    phase length), where the paired t-test's normality assumption is shaky at
+    n=10; Wilcoxon is distribution-free and the more defensible test there.
+    """
+    f = np.asarray(f_arr, dtype=float)
+    o = np.asarray(o_arr, dtype=float)
+    if np.allclose(f, o):
+        return 0.0, 1.0, 1.0
+    t, p_t = stats.ttest_rel(f, o)
+    try:
+        _, p_w = stats.wilcoxon(f, o, zero_method="pratt")
+    except ValueError:
+        # e.g. all pairwise differences zero after the allclose guard slips
+        p_w = 1.0
+    return float(t), float(p_t), float(p_w)
+
+
 def summarize_multiseed(multiseed_results: dict,
                         filename: str = "summary_multiseed.csv"):
     """Per-(experiment, config, metric) mean ± 95% CI across seeds."""
@@ -451,10 +474,7 @@ def compute_multiseed_pvalues(multiseed_results: dict,
                     continue
                 f_arr = np.array([p[0] for p in pairs])
                 o_arr = np.array([p[1] for p in pairs])
-                if np.allclose(f_arr, o_arr):
-                    t, p = 0.0, 1.0
-                else:
-                    t, p = stats.ttest_rel(f_arr, o_arr)
+                t, p, p_w = _paired_p(f_arr, o_arr)
                 mean_diff = float(f_arr.mean() - o_arr.mean())
                 lower_better = metric in _LOWER_IS_BETTER
                 full_better = (mean_diff < 0) if lower_better else (mean_diff > 0)
@@ -465,6 +485,7 @@ def compute_multiseed_pvalues(multiseed_results: dict,
                              "Other_Mean": round(float(o_arr.mean()), 3),
                              "t_stat": round(float(t), 4),
                              "p_value": round(float(p), 6),
+                             "p_wilcoxon": round(float(p_w), 6),
                              "sig_0.05": bool(p < 0.05),
                              "Full_Better": bool(full_better),
                              "N_pairs": len(pairs)})
@@ -480,9 +501,12 @@ def compute_multiseed_pvalues(multiseed_results: dict,
         by_exp[r["Experiment"]].append(r)
     for exp_rows in by_exp.values():
         adj = _holm([r["p_value"] for r in exp_rows])
-        for r, pa in zip(exp_rows, adj):
+        adj_w = _holm([r["p_wilcoxon"] for r in exp_rows])
+        for r, pa, pwa in zip(exp_rows, adj, adj_w):
             r["p_holm"] = round(float(pa), 6)
             r["sig_holm_0.05"] = bool(pa < 0.05)
+            r["p_wilcoxon_holm"] = round(float(pwa), 6)
+            r["sig_wilcoxon_holm_0.05"] = bool(pwa < 0.05)
 
     df = pd.DataFrame(rows)
     fpath = os.path.join(cfg.RESULTS_DIR, filename)

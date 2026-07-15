@@ -32,7 +32,8 @@ class NeuromodulatedLinear(nn.Module):
 
     def __init__(self, in_features: int, out_features: int,
                  eta_decay: float = cfg.ETA_DECAY,
-                 eta_trace: float = cfg.ETA_TRACE):
+                 eta_trace: float = cfg.ETA_TRACE,
+                 plastic_alpha_init: float = cfg.PLASTIC_ALPHA_INIT):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -54,9 +55,11 @@ class NeuromodulatedLinear(nn.Module):
         # Hebbian eligibility trace — *not* a parameter (no gradient)
         self.register_buffer("hebb_trace", torch.zeros(out_features, in_features))
 
-        # Learnable plasticity coefficient (α in Backpropamine)
+        # Learnable plasticity coefficient (α in Backpropamine). Its init is
+        # tunable so the DA-strong probe (tools/da_strong_probe.py) can raise
+        # the fast-weight strength; defaults to cfg.PLASTIC_ALPHA_INIT.
         self.alpha = nn.Parameter(
-            torch.full((out_features, in_features), cfg.PLASTIC_ALPHA_INIT))
+            torch.full((out_features, in_features), plastic_alpha_init))
 
     def reset_trace(self):
         """Zero the Hebbian trace at the start of a new episode/lifetime."""
@@ -107,10 +110,13 @@ class PlasticNetwork(nn.Module):
               → Linear(output)   [head — standard, no plasticity]
     """
 
-    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int):
+    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int,
+                 plastic_alpha_init: float = cfg.PLASTIC_ALPHA_INIT):
         super().__init__()
-        self.plastic1 = NeuromodulatedLinear(input_dim, hidden_dim)
-        self.plastic2 = NeuromodulatedLinear(hidden_dim, hidden_dim)
+        self.plastic1 = NeuromodulatedLinear(
+            input_dim, hidden_dim, plastic_alpha_init=plastic_alpha_init)
+        self.plastic2 = NeuromodulatedLinear(
+            hidden_dim, hidden_dim, plastic_alpha_init=plastic_alpha_init)
         self.head = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x: torch.Tensor,

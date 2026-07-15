@@ -45,8 +45,7 @@ class HormonalMetaAgent:
         self.engine = HormoneEngine(enable_da, enable_na, enable_5ht,
                                     volatility_threshold=volatility_threshold)
 
-        # Performance trackers
-        self._death_count = 0
+        # Performance tracker
         self._total_steps = 0
 
         # Logging buffers for hyperparameter dynamics
@@ -71,9 +70,6 @@ class HormonalMetaAgent:
                 'alpha', 'epsilon', 'gamma', 'punish_gain', and hormone levels.
         """
         self._total_steps += 1
-
-        if done and reward <= cfg.RISK_PENALTY_THRESHOLD:
-            self._death_count += 1
 
         # Update hormone concentrations
         hormones = self.engine.step(td_error, reward, done)
@@ -107,7 +103,6 @@ class HormonalMetaAgent:
     def hard_reset(self):
         """Full reset including hormone levels (for new experiment run)."""
         self.engine.reset()
-        self._death_count = 0
         self._total_steps = 0
         self.history_alpha.clear()
         self.history_epsilon.clear()
@@ -116,10 +111,6 @@ class HormonalMetaAgent:
         self.engine.history_na.clear()
         self.engine.history_ht.clear()
         self.engine.history_da_eff.clear()
-
-    @property
-    def death_count(self) -> int:
-        return self._death_count
 
     # ──────────────────────────────────────────────────────────────────
     # Hyperparameter modulation  (Section 4B)

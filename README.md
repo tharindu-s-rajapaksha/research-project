@@ -50,6 +50,21 @@ python main.py --exp 3 --workers 12
 ```bash
 python main.py --generalist --workers 12
 ```
+
+#### Fair-Baseline Battery — "beats STANDARD RL?" (10 seeds)
+Compares the Full agent against **well-tuned standard DQNs** (swept-ε, ε-decay, and
+value-corrected MSE / reward-scaled), not just the near-greedy ε=0.01 baseline. This is the
+honest "beats standard RL" test — see `RESEARCH_NOTES.md` §6.6.
+```bash
+python main.py --baselines --workers 12
+```
+
+#### Regenerate result tables + sensitivity probes
+```bash
+python tools/make_tables.py                       # tables from CSVs -> RESULTS_TABLES.md
+python tools/bandit_gamma0_probe.py               # NA robust to gamma=0? (sensitivity)
+python tools/da_strong_probe.py                   # DA-strong (exploratory / future work)
+```
 Workers run on CPU by default (faster for tiny nets than GPU). Results: `research_results/*.csv`, dashboards, regret curves.
 
 *Note: Add `--merge` to any of the above to combine results into a single chart file.*
@@ -77,6 +92,24 @@ python simulation_engine.py --exp 3 --mode fast
 
 ---
 
+## 📌 Honest results summary
+
+Every number traces to a committed CSV (`research_results/`, regenerate tables with
+`python tools/make_tables.py`). Full details + statistics in `RESEARCH_NOTES.md`.
+
+- **Adaptation (Exp 1) — the strongest, cleanest win.** The Full agent re-locks after a reward
+  switch ~58% faster than a standard DQN, and faster than the best **swept-ε / ε-decay** DQN
+  (fair-baseline study). The ablation isolates this to **noradrenaline** (removing NA nearly
+  doubles latency, Holm p=1.7×10⁻⁴; removing dopamine changes nothing).
+- **Survival (Exp 2) — a real but *bounded* win.** vs a Huber-loss DQN, 5-HT behavioural
+  inhibition cuts deaths ~13×. **Honest bound:** a *value-corrected* DQN (MSE / reward-scaled)
+  also avoids the trap without serotonin, so 5-HT **repairs a known DQN loss-function pathology**
+  rather than being universally necessary.
+- **Integration / novelty (generalist study).** Only the tri-hormone agent is competent across
+  *both* an adaptation and a survival niche — **generalist coverage**, not synergy.
+- **Dopamine / differentiable plasticity — a documented negative.** Neutral-to-harmful on every
+  task tested; the DA-strong probe is an exploratory attempt to find where it helps.
+
 ## 🧪 Experiments
 
 ### Exp 1: Volatile Multi-Armed Bandit (NA Test)
@@ -85,8 +118,8 @@ Tests the agent's ability to detect shifts in reward distributions. Noradrenalin
 ### Exp 2: High-Stakes Foraging (5-HT Test)
 Tests survival and harm aversion. Serotonin (5-HT) spikes during "near-death" or high-risk scenarios to enforce a safer policy.
 
-### Exp 3: Volatile Risky Foraging (CAPSTONE — all three hormones together)
-An integrative task that **fuses Exp 1 and Exp 2**: among several safe arms one is "good" and it **moves** over time (volatility → NA/DA), while a tempting arm pays well but is occasionally **lethal** (→ 5-HT). The full multi-neuromodulated agent must adapt to the moving optimum *and* resist the lethal arm at once. Headline metric: **cumulative reward** — the full model should beat the static baseline and every single-hormone ablation.
+### Exp 3: Volatile Risky Foraging (CAPSTONE — integration + survival)
+An integrative task that **fuses Exp 1 and Exp 2**: a contextual cue→action mapping that **reverses** over time (volatility → NA/DA), plus a tempting but occasionally **lethal** arm (→ 5-HT). Headline metric: **cumulative reward**. Honest result (see `RESEARCH_NOTES.md` §6.3): the Full agent **massively beats standard RL**, but the win is driven by **5-HT survival** (not dying), with DA giving a marginal re-adaptation-latency benefit and NA no measurable effect here; overall accuracy ≈0.41, so the agent only *partially* learns the reversal mapping. It is an **integration + survival** result, **not** an "all three hormones cooperating" result.
 
 ### (Legacy) CartPole Physics Adaptation — secondary / negative result
 Kept via `experiments.run_experiment_cartpole` to reproduce the honest finding that DA-gated plasticity *helps* discrete re-mapping but *hurts* stable continuous control. Not part of the default suite.
@@ -103,9 +136,12 @@ Kept via `experiments.run_experiment_cartpole` to reproduce the honest finding t
 - `plasticity.py`: Neuromodulated linear layers and Hebbian trace logic.
 - `worker.py`: DQN implementation and baseline agents.
 - `environments.py`: Custom Gymnasium environments for Bandit and Foraging.
-- `ablation.py`: Framework for running comparative studies.
-- `evaluation.py`: Statistics and dashboard generation.
-- `research_results/`: Directory where all dashboards and CSVs are saved.
+- `ablation.py`: Framework for running comparative (multi-seed) studies.
+- `generalist.py`: "Generalist vs specialists" novelty study.
+- `baselines.py`: Fair-baseline battery (Full vs well-tuned standard DQNs).
+- `evaluation.py`: Statistics (paired t + Wilcoxon, Holm) and dashboard generation.
+- `tools/`: `make_tables.py` (regenerate tables from CSVs), `bandit_gamma0_probe.py`, `da_strong_probe.py`.
+- `research_results/`: Directory where all dashboards, CSVs, and `RESULTS_TABLES.md` are saved.
 
 ---
 

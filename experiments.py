@@ -40,7 +40,8 @@ def _seed_all(seed: int):
 
 def _make_agent(state_dim: int, action_dim: int, ablation_cfg: dict,
                 replay_size: int = cfg.REPLAY_SIZE,
-                volatility_threshold: float = cfg.VOLATILITY_THRESHOLD):
+                volatility_threshold: float = cfg.VOLATILITY_THRESHOLD,
+                plastic_alpha: float = None):
     """Factory: build Meta-Agent + Worker pair based on ablation config.
 
     All configurations use the SAME plastic ``LocalRLWorker`` so the only
@@ -54,18 +55,35 @@ def _make_agent(state_dim: int, action_dim: int, ablation_cfg: dict,
     (forget stale reward stats fast), large for foraging/control (retain the
     rare death transitions long enough to learn from them).
     """
+    # `.get(..., False)` so fair-baseline configs (baselines.py) may omit the
+    # DA/NA/5HT keys — a vanilla worker ignores modulation anyway, so the meta's
+    # enable flags are irrelevant for it. Existing ablation configs pass explicit
+    # keys, so their behaviour is unchanged.
     meta = HormonalMetaAgent(
-        enable_da=ablation_cfg["DA"],
-        enable_na=ablation_cfg["NA"],
-        enable_5ht=ablation_cfg["5HT"],
+        enable_da=ablation_cfg.get("DA", False),
+        enable_na=ablation_cfg.get("NA", False),
+        enable_5ht=ablation_cfg.get("5HT", False),
         volatility_threshold=volatility_threshold,
     )
     if ablation_cfg.get("vanilla", False):
-        worker = StaticBaselineWorker(state_dim, action_dim,
-                                      replay_size=replay_size)
+        # Extra keys (all default to the original fixed-ε / Huber behaviour, so
+        # the ablation's "Vanilla DQN" stays byte-identical): a fixed `epsilon`,
+        # a linear ε-anneal (eps_start/eps_end/eps_decay_steps), and a
+        # value-corrected target (loss="mse" or reward_scale) — see BASELINE_CONFIGS.
+        worker = StaticBaselineWorker(
+            state_dim, action_dim, replay_size=replay_size,
+            epsilon=ablation_cfg.get("epsilon", cfg.EPSILON_BASE),
+            eps_start=ablation_cfg.get("eps_start"),
+            eps_end=ablation_cfg.get("eps_end"),
+            eps_decay_steps=ablation_cfg.get("eps_decay_steps"),
+            loss=ablation_cfg.get("loss", "huber"),
+            reward_scale=ablation_cfg.get("reward_scale", 1.0),
+        )
     else:
+        # DA-strong probe may raise the plastic-coefficient init; None → default.
+        kw = {} if plastic_alpha is None else {"plastic_alpha_init": plastic_alpha}
         worker = LocalRLWorker(state_dim, action_dim,
-                               replay_size=replay_size)
+                               replay_size=replay_size, **kw)
     return meta, worker
 
 
@@ -213,9 +231,13 @@ def run_experiment_2(ablation_cfg: dict = None, seed: int = cfg.SEED,
 
         state = next_state
 
-    # If no death occurred, survival = total steps
-    if not deaths:
-        survival_steps.append(cfg.EXP2_TOTAL_STEPS)
+    # Count the trailing survival streak (from the last death — or from the
+    # start, if no death ever occurred — to the end of the run). Without this the
+    # final interval was dropped, biasing Survival_Rate downward for low-death
+    # agents. If the very last step was a death, steps_since_death == 0 and there
+    # is no trailing streak to add.
+    if steps_since_death > 0:
+        survival_steps.append(steps_since_death)
 
     return {
         "rewards": rewards,
@@ -240,7 +262,8 @@ def run_experiment_2(ablation_cfg: dict = None, seed: int = cfg.SEED,
 # Experiment 3 — Volatile Risky Foraging (CAPSTONE: DA + NA + 5-HT together)
 # ======================================================================
 def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
-                     label: str = "Full Model") -> dict:
+                     label: str = "Full Model",
+                     plastic_alpha: float = None) -> dict:
     """Capstone experiment — the moving good arm (Exp 1) fused with the lethal
     high-EV arm (Exp 2), so all three neuromodulators are needed at once.
 
@@ -261,7 +284,8 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
     env = ContextualRiskyForaging(seed=seed)
     meta, worker = _make_agent(env.observation_dim, env.action_dim,
                                ablation_cfg, replay_size=cfg.VRF_REPLAY_SIZE,
-                               volatility_threshold=cfg.VRF_VOLATILITY_THRESHOLD)
+                               volatility_threshold=cfg.VRF_VOLATILITY_THRESHOLD,
+                               plastic_alpha=plastic_alpha)
     meta.hard_reset()
 
     state = env.reset()
@@ -297,8 +321,10 @@ def run_experiment_3(ablation_cfg: dict = None, seed: int = cfg.SEED,
 
         state = next_state
 
-    if not deaths:
-        survival_steps.append(cfg.VRF_TOTAL_STEPS)
+    # Count the trailing survival streak (see run_experiment_2 for rationale):
+    # from the last death (or the start, if none) to the end of the run.
+    if steps_since_death > 0:
+        survival_steps.append(steps_since_death)
 
     # ── Re-adaptation latency (per reversal, ACCURACY-based) ─────────────
     # Contextual task: the correct action depends on the cue, so we cannot use

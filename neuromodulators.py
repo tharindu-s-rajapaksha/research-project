@@ -79,7 +79,7 @@ class HormoneEngine:
         # 1. Compute raw spikes ------------------------------------------
         da_spike = self._compute_da_spike(td_error)
         na_spike = self._compute_na_spike(td_error, reward)
-        ht_spike = self._compute_ht_spike(reward, done)
+        ht_spike = self._compute_ht_spike(reward)
 
         # 2. Accumulation + Decay ----------------------------------------
         self.da = self._decay(self.da, cfg.HORMONE_DECAY_DA, da_spike,
@@ -212,15 +212,18 @@ class HormoneEngine:
         return 0.0
 
     @staticmethod
-    def _compute_ht_spike(reward: float, done: bool) -> float:
+    def _compute_ht_spike(reward: float) -> float:
         """Serotonin spike from aversive events (Section 3A).
 
-        Triggered by 'Death' (done=True with heavy penalty) or rewards
-        below RISK_PENALTY_THRESHOLD.
+        Fires on any reward at or below RISK_PENALTY_THRESHOLD — a "harm" event
+        (the −500 deaths in Exp 2/3). The spike magnitude scales with the loss
+        relative to the canonical death penalty. (Superseding the old two-branch
+        form that gated one branch on ``done``: a harmful reward is aversive
+        whether or not the episode also terminates, so for every reward these
+        environments actually produce the single threshold test is equivalent —
+        and clearer.)
         """
-        if done and reward <= cfg.RISK_PENALTY_THRESHOLD:
-            return abs(reward) / abs(cfg.DEATH_PENALTY) * cfg.HT_SPIKE_SCALE
-        if reward < cfg.RISK_PENALTY_THRESHOLD:
+        if reward <= cfg.RISK_PENALTY_THRESHOLD:
             return abs(reward) / abs(cfg.DEATH_PENALTY) * cfg.HT_SPIKE_SCALE
         return 0.0
 

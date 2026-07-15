@@ -53,7 +53,7 @@ from scipy import stats
 
 import config as cfg
 from experiments import run_experiment_1, run_experiment_2
-from evaluation import _mean_ci, _holm
+from evaluation import _mean_ci, _holm, _paired_p
 
 # Task A = adaptation (Exp 1); Task B = survival (Exp 2).
 _TASK_RUNNER = {"A_adapt": run_experiment_1, "B_survive": run_experiment_2}
@@ -185,7 +185,7 @@ def generalist_pvalues(battery, filename="generalist_pvalues.csv"):
                 continue
             f_arr = np.array([p[0] for p in pairs])
             o_arr = np.array([p[1] for p in pairs])
-            t_stat, p_val = stats.ttest_rel(f_arr, o_arr)
+            t_stat, p_val, p_w = _paired_p(f_arr, o_arr)
             full_better = (f_arr.mean() < o_arr.mean()) if lower_better \
                 else (f_arr.mean() > o_arr.mean())
             rows.append({"Task": _TASK_LABEL[task], "Metric": metric,
@@ -195,13 +195,17 @@ def generalist_pvalues(battery, filename="generalist_pvalues.csv"):
                          "Full_better": bool(full_better),
                          "t": round(float(t_stat), 3),
                          "p_value": round(float(p_val), 6),
+                         "p_wilcoxon": round(float(p_w), 6),
                          "N": len(pairs)})
 
     if rows:
         adj = _holm([r["p_value"] for r in rows])
-        for r, pa in zip(rows, adj):
+        adj_w = _holm([r["p_wilcoxon"] for r in rows])
+        for r, pa, pwa in zip(rows, adj, adj_w):
             r["p_holm"] = round(float(pa), 6)
+            r["p_wilcoxon_holm"] = round(float(pwa), 6)
             r["sig_holm_0.05"] = bool(pa < 0.05 and r["Full_better"])
+            r["sig_wilcoxon_holm_0.05"] = bool(pwa < 0.05 and r["Full_better"])
 
     df = pd.DataFrame(rows)
     fpath = os.path.join(cfg.RESULTS_DIR, filename)

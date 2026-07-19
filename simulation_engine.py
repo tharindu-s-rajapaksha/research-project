@@ -497,7 +497,12 @@ class SimulationEngine:
         bar_surf = self.font.render(bar_text, True, C_TEXT)
         self.screen.blit(bar_surf, (10, 10))
         
-        if isinstance(self.worker, StaticBaselineWorker):
+        # A LocalRLWorker with every hormone unchecked IS the Static-Baseline
+        # config (frozen α/ε/γ, plastic gate = 0), so label it static too — not
+        # only the plain-MLP StaticBaselineWorker.
+        is_frozen = (isinstance(self.worker, StaticBaselineWorker)
+                     or not any(self.ablation_flags.values()))
+        if is_frozen:
             model_surf = self.font.render("STATIC BASELINE", True, (255, 100, 100))
         else:
             model_surf = self.font.render("DYNAMIC RL", True, (100, 255, 100))

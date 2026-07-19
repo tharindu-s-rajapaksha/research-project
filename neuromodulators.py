@@ -39,8 +39,9 @@ class HormoneEngine:
                 exceed to fire. Set PER EXPERIMENT: a quiet reward stream (pure
                 bandit) needs a high bar (~3.5) so ε-greedy noise doesn't trip
                 it, whereas a stream with large intrinsic variance (the risky
-                foraging capstone, ±50/−500) needs a lower bar (~2.0) or the
-                switch-induced drop is buried under the risky-arm variance.
+                foraging capstone, ±50/−500) needs a lower bar (~1.0, see
+                cfg.VRF_VOLATILITY_THRESHOLD) or the switch-induced drop is
+                buried under the risky-arm variance.
         """
         self.enable_da  = enable_da
         self.enable_na  = enable_na

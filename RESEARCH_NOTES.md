@@ -3,7 +3,12 @@
 
 > Purpose: a single reference you can lift directly into the thesis (Methodology,
 > Results, Discussion, Threats to Validity, Future Work). Numbers are from the
-> corrected, multi-seed (n=10) runs. Where a result is still pending, it says so.
+> corrected, multi-seed (n=51) runs. Where a result is still pending, it says so.
+>
+> ⚠️ **Single source of truth: `research_results/RESULTS_TABLES.md`** (auto-generated
+> from the committed CSVs by `python tools/make_tables.py`, N=51). If any inline number
+> below disagrees with that file, **the CSV/RESULTS_TABLES.md wins** — re-sync, do not
+> hand-transcribe. The §6 tables were regenerated to the 51-seed run on 2026-07-19.
 
 ---
 
@@ -23,20 +28,20 @@ statistics.
 > hand-transcribe: edit the study, re-run, regenerate.** The tables below are
 > refreshed from the current `summary_multiseed.csv` / `pvalues.csv`.
 
-Final standing (10 seeds, all experiments complete):
+Final standing (51 seeds, all experiments complete):
 - **Experiment 1 — the Full model significantly beats standard RL, and NA is the
-  cleanly-isolated driver.** It re-locks after a reward switch in **165 vs 390 steps**
-  for the matched Static/Vanilla baseline (~58% faster; latency Holm *p*=3×10⁻⁴,
-  reward Holm *p*=1×10⁻³). The ablation isolates **noradrenaline**: removing NA nearly
-  doubles latency (165 → 368, Holm *p*=1.7×10⁻⁴), while removing DA changes nothing
-  (165 → 163, *p*=0.83) and removing 5-HT is bit-identical (5-HT is inert on an
+  cleanly-isolated driver.** It re-locks after a reward switch in **174 vs 382 steps**
+  for the matched Static/Vanilla baseline (~54% faster; latency Holm *p*≈0,
+  reward Holm *p*≈0). The ablation isolates **noradrenaline**: removing NA nearly
+  doubles latency (174 → 348, Holm *p*≈0), while removing DA changes nothing
+  (174 → 178, *p*=0.40) and removing 5-HT is bit-identical (5-HT is inert on an
   all-positive-reward bandit). ⚠️ **This corrects the earlier draft, which claimed
   DA/plasticity was the main contributor and NA was n.s. — the committed CSVs show the
   exact opposite. NA is the driver; DA is inert here.** (See §6.2.)
 - **Experiment 2 — 5-HT harm aversion vs a *naive* DQN: strongly confirmed; vs a
   *value-corrected* DQN: NOT necessary (honest caveat, §6.6).** Against the matched
   Huber-loss baseline, removing 5-HT raises deaths **≈13×** (36 → 478) and flips
-  cumulative reward **+21,191 → −21,065** (paired t on deaths t≈−46, *p*<10⁻⁶) —
+  cumulative reward **+20,886 → −22,823** (paired t on deaths t≈−75, *p*<10⁻⁶) —
   necessary and sufficient. **BUT** the fair-baseline study (§6.6) shows this win is
   largely a *Huber-loss artefact*: the standard DQN dies because Huber clips the
   gradient of the rare −500, so it under-weights the catastrophe; a value-corrected
@@ -46,13 +51,17 @@ Final standing (10 seeds, all experiments complete):
   *negative-EV*, −5 < +5, so the reward-optimal policy is already all-safe; see §6.1.)
 - **Experiment 3 — Risky Foraging CAPSTONE (replaces CartPole).** An integrative task
   fusing volatility with lethal risk. Two iterations (see §6.3, §12): a **stateless**
-  version (10-seed committed result) and a **contextual reversal-learning** upgrade
-  (current). Both give the same headline: **Full significantly beats standard RL** (vs
-  Static & Vanilla: reward +14.2k vs −11.4k, Holm p=0.002), and **5-HT is robustly
-  necessary and sufficient** (removing it → catastrophe, all p≈0). **NA and DA are
-  *regime-dependent*:** they matter only where the base learner is overwhelmed (poor
-  absolute performance); where it is competent they are redundant — so their individual
-  necessity is claimed in **Exp 1**, not forced here. **Honest conclusion:** the capstone
+  version (older result) and a **contextual reversal-learning** upgrade
+  (current, committed). Both give the same headline: **Full significantly beats standard
+  RL** (contextual, 51 seeds, vs Static & Vanilla: reward +29,447 vs −23,506, Holm p≈0),
+  and **5-HT is robustly necessary and sufficient** (removing it → catastrophe, all p≈0).
+  **On the committed contextual capstone, DA and NA are NOT null** (this updates the older
+  10-seed reading): removing DA significantly *worsens* reward (29.4k → 27.8k, Holm
+  p=0.012), latency (841 → 943, p≈0) and accuracy (0.43 → 0.39, p≈0); removing NA
+  significantly *worsens* latency (841 → 915, p≈0) but **also lowers deaths** (47 → 39,
+  p≈0) because NA's exploration samples the lethal arm, so its **net reward** effect is nil
+  (p=0.93). So 5-HT dominates, DA gives a small all-round benefit, and NA is a latency/death
+  trade-off that washes out on reward. **Honest conclusion:** the capstone
   is an *integration win* + a genuine finding about **neuromodulator redundancy** (5-HT
   robustly necessary; NA/DA necessary only under high adaptation demand), not an
   "every-hormone-necessary-in-one-task" result. A robust **median/MAD NA detector** (a
@@ -65,7 +74,7 @@ Final standing (10 seeds, all experiments complete):
   ties the best specialist and **significantly beats every specialist lacking the relevant
   hormone**, so **no single-modulator agent is competent on both** — DA/NA-only die in the
   survival task, 5-HT-only is >2× slower to adapt. Task-anchored worst-task "floor"
-  competence: **Full 0.81 vs 0.55 (5-HT-only) and ≤0.05** for the arms that die. This is
+  competence: **Full 0.80 vs 0.56 (5-HT-only) and ≤0.06** for the arms that die. This is
   the robust, honest form of the interim novelty ("integration beats single-modulator
   gating"), distinct from prior serotonin-alone work.
 - **(Legacy, secondary/negative) CartPole.** Retained via `run_experiment_cartpole`:
@@ -74,10 +83,10 @@ Final standing (10 seeds, all experiments complete):
   useful contrast — plasticity helps discrete re-mapping but hurts continuous control.
 
 **One-line takeaway:** the defensible contributions are (1) a **cleanly-isolated noradrenergic
-adaptation win** (Exp 1: Full re-locks ~58% faster than a standard DQN — including the best
-swept-ε/ε-decay DQN, §6.6 — attributed specifically to NA, Holm p=1.7×10⁻⁴), and (2)
+adaptation win** (Exp 1: Full re-locks ~54% faster than a standard DQN — including the best
+swept-ε/ε-decay DQN, §6.6 — attributed specifically to NA, Holm p≈0), and (2)
 **generalist coverage** (§6.5: only the tri-hormone agent is competent across both an adaptation
-and a survival niche; task-anchored worst-task floor 0.81 vs ≤0.55 for every specialist).
+and a survival niche; task-anchored worst-task floor 0.80 vs ≤0.56 for every specialist).
 Serotonin's survival effect is real but **honestly bounded** (§6.6: a value-corrected DQN also
 survives without it, so 5-HT *repairs a Huber-loss pathology* rather than being universally
 necessary). Dopaminergic plasticity is a **documented negative** (neutral-to-harmful everywhere;
@@ -90,9 +99,9 @@ framing is retired; see §6.1, §6.3, §6.6.)
 > `research_results/*.csv` via `tools/make_tables.py`. After any code change that
 > affects results (e.g. the Survival_Rate trailing-streak fix, or the new fair
 > baselines), **re-run the studies then regenerate the tables** — do not edit numbers
-> by hand. Commands in §11. The fair-baseline battery (§6.6) and the two sensitivity
-> probes (`tools/da_strong_probe.py`, `tools/bandit_gamma0_probe.py`) are new and
-> must be run to fill their final 10-seed numbers.
+> by hand. Commands in §11. The fair-baseline battery (§6.6) has now been run at **51 seeds**
+> (committed CSVs); the two sensitivity probes (`tools/da_strong_probe.py`,
+> `tools/bandit_gamma0_probe.py`) are exploratory and run serially on demand.
 
 ---
 
@@ -164,13 +173,13 @@ Baseline is exactly the Full Model with hormones held constant.* This is what ma
 the ablation clean, and is verified by a unit check (α=α_base, ε=ε_base, γ=γ_base,
 gain=1, plastic-gate=0 at rest).
 
-**Statistics.** Each (experiment × config) is run on **10 shared seeds**
-(`SEEDS = 42…51`). For every headline metric we report **mean ± 95% CI**
+**Statistics.** Each (experiment × config) is run on **51 shared seeds**
+(`SEEDS = 42…92`). For every headline metric we report **mean ± 95% CI**
 (t-based, `evaluation.summarize_multiseed`). Significance uses **paired tests**
 (Full vs each config, seeds matched; `evaluation.compute_multiseed_pvalues`):
 a **paired t-test AND a Wilcoxon signed-rank** (`_paired_p`) — the latter is the
 distribution-free test reported for the count/capped metrics (`Death_Count`,
-`Adaptation_Latency`) where normality is shaky at n=10. Both are **Holm–Bonferroni
+`Adaptation_Latency`) where normality is shaky at small n. Both are **Holm–Bonferroni
 corrected** within each experiment's family (columns `p_holm`, `p_wilcoxon_holm`),
 dropping seeds where a metric is undefined (e.g. an ungated CartPole recovery). Runs
 are parallelised across CPU processes (`--workers N`); results are reassembled in
@@ -309,28 +318,29 @@ large DA-driven α spikes destabilised value learning.
 
 ## 6. Results so far
 
-### 6.1 Experiment 2 — High-Stakes Foraging (5-HT), n=10 ✅ headline result
+### 6.1 Experiment 2 — High-Stakes Foraging (5-HT), n=51 ✅ headline result
 
 Cumulative-reward and survival over 5,000 steps (mean ± 95% CI, from
 `summary_multiseed.csv`; Survival_Rate = mean steps between deaths):
 
 | Config | Deaths ↓ | Survival ↑ | Total Reward ↑ |
 |---|---|---|---|
-| **Full Model** | **36.2 ± 4.2** | **140.0 ± 19.8** | **+21,191 ± 2,044** |
-| Ablated DA | 33.5 ± 5.6 | 152.1 ± 26.4 | +21,380 ± 1,948 |
-| Ablated NA | 35.5 ± 3.7 | 142.5 ± 18.4 | +21,356 ± 2,157 |
-| **Ablated 5-HT** | **478.2 ± 19.8** | **10.5 ± 0.4** | **−21,065 ± 8,216** |
-| Static Baseline | 474.9 ± 23.7 | 10.6 ± 0.5 | −20,753 ± 8,765 |
-| Vanilla DQN | 474.9 ± 23.7 | 10.6 ± 0.5 | −20,753 ± 8,765 |
+| **Full Model** | **36.0 ± 1.9** | **166.1 ± 60.7** | **+20,886 ± 793** |
+| Ablated DA | 33.1 ± 2.3 | 183.8 ± 61.4 | +21,170 ± 803 |
+| Ablated NA | 35.8 ± 1.9 | 166.5 ± 60.7 | +20,918 ± 802 |
+| **Ablated 5-HT** | **478.0 ± 12.0** | **10.5 ± 0.3** | **−22,823 ± 3,368** |
+| Static Baseline | 468.5 ± 19.6 | 11.2 ± 1.0 | −21,855 ± 3,895 |
+| Vanilla DQN | 468.5 ± 19.6 | 11.2 ± 1.0 | −21,855 ± 3,895 |
 
 Paired tests (Full vs …, from `pvalues.csv`):
-- **vs Ablated 5-HT:** deaths 36 vs 478, t=−46.0 (p<10⁻⁶); survival t=14.7 (p<10⁻⁶); reward
-  +21,191 vs −21,065, t=12.5 (p<10⁻⁶). **Full is vastly better than the same architecture
+- **vs Ablated 5-HT:** deaths 36 vs 478, t=−75.3 (p<10⁻⁶); survival t=5.1 (p<10⁻⁶); reward
+  +20,886 vs −22,823, t=26.9 (p<10⁻⁶). **Full is vastly better than the same architecture
   without serotonin.**
-- vs Static / Vanilla: same picture (deaths t≈−39, reward t≈11.7, all p<10⁻⁶).
-- vs Ablated NA: **no difference** (p≈0.34) — NA is correctly irrelevant to survival.
-- vs Ablated DA: Ablated-DA is *marginally* better (deaths 33.5 vs 36.2; reward n.s.) —
-  DA-plasticity mildly **hurts** survival (extra exploration noise).
+- vs Static / Vanilla: same picture (deaths t≈−45, reward t≈22.8, all p<10⁻⁶).
+- vs Ablated NA: **no difference** (p≈0.32) — NA is correctly irrelevant to survival.
+- vs Ablated DA: Ablated-DA is *marginally* better (deaths 33.1 vs 36.0, Holm p≈0; reward
+  21,170 vs 20,886, p=0.013 but Holm-n.s. at 0.052) — DA-plasticity mildly **hurts**
+  survival (extra exploration noise).
 
 > ⚠️ **Read §6.6 before quoting this as "5-HT is necessary to survive."** The Static/Vanilla
 > comparison uses a **Huber-loss** DQN, which gradient-clips the −500 catastrophe and so
@@ -349,43 +359,46 @@ misses. That DQN fails for value-estimation reasons: (i) the Huber/`smooth_l1` l
 gradient of the rare −500, so the catastrophe is under-weighted; (ii) ε-greedy keeps
 resampling the risky arm. 5-HT's two pathways (punishment up-weighting + behavioural
 inhibition) counter exactly these. Concretely: the optimal always-safe policy scores
-≈**+25,000**; **Full ≈ +21,191** (dies ≈36× — it *reduces*, not eliminates, the failure);
-every config **without** 5-HT collapses to ≈**−21,000** and ≈475 deaths.
+≈**+25,000**; **Full ≈ +20,886** (dies ≈36× — it *reduces*, not eliminates, the failure);
+every config **without** 5-HT collapses to ≈**−22,000** and ≈470 deaths.
 
 **Second framing (the honest bound, from §6.6): the win is over a *Huber-loss* DQN, not RL in
 general.** Because reason (i) is a loss-function artefact, a value-corrected DQN (MSE, or
 reward scaled so the −500 lands at Huber's balanced knee) *also* avoids the trap **without any
-serotonin** (pilot: MSE +16k, reward-scaled +22k vs Full's +21k). So 5-HT is a **legitimate,
+serotonin** (51 seeds: MSE +19.3k, reward-scaled +20.4k vs Full's +20.9k — both survive
+without 5-HT, though **neither actually beats Full**: Full > MSE with p<10⁻⁴ and ties
+reward-scaled at p=0.56). So 5-HT is a **legitimate,
 biologically-motivated fix for a specific and common DQN pathology (Huber under-weighting rare
 catastrophes)** — state it that way, and cite §6.6, rather than claiming serotonin is required
 to survive. **Also drop the original "mathematical trap" arithmetic (risky EV +45 > safe +5) —
 it omitted the −500; the true EV is −5.**
 
-### 6.2 Experiment 1 — Volatile Bandit (NA / adaptation), n=10 ✅ beats standard RL; NA isolated
+### 6.2 Experiment 1 — Volatile Bandit (NA / adaptation), n=51 ✅ beats standard RL; NA isolated
 
 Adaptation latency (steps to re-lock, lower better) and cumulative reward (mean ± 95% CI,
 from `summary_multiseed.csv` / `pvalues.csv`):
 
 | Config | Latency ↓ | Total Reward ↑ |
 |---|---|---|
-| **Full Model** | **165.1 ± 31.5** | **30,800 ± 1,145** |
-| Ablated DA | 162.9 ± 28.9 | 31,376 ± 1,638 |
-| Ablated NA | **368.4 ± 62.0** | 25,602 ± 2,788 |
-| Ablated 5-HT | 165.1 ± 31.5 | 30,800 ± 1,145 |
-| Static Baseline | 390.0 ± 69.7 | 24,973 ± 2,890 |
-| Vanilla DQN | 390.0 ± 69.7 | 24,973 ± 2,890 |
+| **Full Model** | **174.0 ± 12.5** | **30,726 ± 595** |
+| Ablated DA | 178.2 ± 15.2 | 30,957 ± 689 |
+| Ablated NA | **347.6 ± 28.1** | 25,922 ± 1,044 |
+| Ablated 5-HT | 174.0 ± 12.5 | 30,726 ± 595 |
+| Static Baseline | 381.7 ± 27.3 | 25,140 ± 973 |
+| Vanilla DQN | 381.7 ± 27.3 | 25,140 ± 973 |
 
 Paired tests (Full vs …, Holm-corrected within the experiment family):
-- **vs Static Baseline / Vanilla DQN:** latency 165 vs 390, t=−7.59 (Holm *p*=3.1×10⁻⁴);
-  reward t=6.11 (Holm *p*=1.2×10⁻³) — **Full significantly better, ~58% faster re-locking.**
-- **vs Ablated NA:** latency 165 vs 368, t=−8.27 (**Holm *p*=1.7×10⁻⁴**); reward t=5.90
-  (Holm *p*=1.2×10⁻³) — **removing NA nearly doubles latency. NA is the isolated driver.**
-- vs Ablated DA: latency 165 vs 163, t=0.23 (*p*=0.83, n.s.); reward *p*=0.064 (Ablated-DA
-  *slightly better*). **DA/plasticity is inert-to-marginally-harmful here.**
+- **vs Static Baseline / Vanilla DQN:** latency 174 vs 382, t=−14.65 (Holm *p*≈0);
+  reward t=13.14 (Holm *p*≈0) — **Full significantly better, ~54% faster re-locking.**
+- **vs Ablated NA:** latency 174 vs 348, t=−12.79 (**Holm *p*≈0**); reward t=11.64
+  (Holm *p*≈0) — **removing NA nearly doubles latency. NA is the isolated driver.**
+- vs Ablated DA: latency 174 vs 178, t=−0.85 (*p*=0.40, n.s.); reward *p*=0.24, n.s.
+  **DA/plasticity is inert here** (at 51 seeds Ablated-DA is a hair *worse* on latency and
+  n.s. on reward — the earlier 10-seed "Ablated-DA slightly better" did not persist).
 - vs Ablated 5-HT: **bit-identical** (*p*=1.0) — 5-HT never spikes (all rewards positive), so
   it is correctly inert on the bandit.
 
-**Interpretation (corrected).** The full agent re-locks after a distribution switch ~58%
+**Interpretation (corrected).** The full agent re-locks after a distribution switch ~54%
 faster than a standard DQN and earns more — the core "beats standard RL" claim, with paired
 statistics. The ablation **cleanly isolates noradrenaline**: NA's switch-triggered ε boost is
 what supplies the exploration needed to escape the stale arm; removing it collapses adaptation
@@ -414,7 +427,9 @@ and the whole cue→action **mapping reverses** at each of 5 switches. Plus the 
 cue-independent lethal arm. Metrics: cumulative reward (headline), **accuracy** (fraction
 of steps taking the cue's correct action), death count, re-adaptation latency.
 
-**FINAL 10-seed results — STATELESS capstone (committed; Holm-corrected vs Full):**
+**Earlier-iteration 10-seed results — STATELESS capstone (HISTORICAL; superseded by the
+contextual capstone, which is what `run_experiment_3` / the committed CSVs now use — see
+"Current committed design" below. Kept for the iteration narrative only):**
 
 | Config | Cumulative reward (±95% CI) | Deaths | Adapt latency | vs Full (reward, Holm) |
 |---|---|---|---|---|
@@ -470,20 +485,24 @@ the base learner's capacity.* → a legitimate Discussion contribution about **n
 redundancy**, not a failure.
 
 **Current committed design:** the **contextual** capstone in the **learnable** regime
-(3 cues, replay 600). Committed 10-seed CSV numbers (`summary_multiseed.csv`): **Full reward
-+29,694 ± 2,752, overall accuracy 0.41 ± 0.04, latency 828/1000, deaths 46**, vs Static/Vanilla
-reward −24,911, accuracy 0.05, latency 980 (Holm p≈0 on reward, accuracy, deaths, latency).
+(3 cues, replay 600). Committed 51-seed CSV numbers (`summary_multiseed.csv`): **Full reward
++29,447 ± 949, overall accuracy 0.43 ± 0.02, latency 841/1000, deaths 47**, vs Static/Vanilla
+reward −23,506, accuracy 0.06, latency 993 (Holm p≈0 on reward, accuracy, deaths, latency).
 
-⚠️ **Do NOT claim "per-phase accuracy ≈0.9".** The committed aggregate accuracy is **0.41**,
-and latency 828 of a 1000-step phase means the agent only crosses the 75%-accuracy bar in the
-**final ~17%** of each phase — it reaches high accuracy briefly at each phase's end, not
-throughout. So the agent **partially** learns the reversal mapping; the +30k-vs-−25k reward gap
-is driven almost entirely by **not dying (5-HT)**, with DA giving a modest latency benefit
-(828 vs 955, Holm p=6×10⁻⁴) and NA no measurable effect here. **Honest framing: the capstone is
-a 5-HT-driven survival + integration win, NOT an "all three hormones cooperating" result.** Lead
-the capstone story with reward/survival; report the marginal DA-latency effect and null NA
-effect plainly. NA/DA individual isolation is claimed in **Exp 1** (NA) and left to the
-DA-strong probe (`tools/da_strong_probe.py`, exploratory) for DA.
+⚠️ **Do NOT claim "per-phase accuracy ≈0.9".** The committed aggregate accuracy is **0.43**,
+and latency 841 of a 1000-step phase means the agent only crosses the 75%-accuracy bar in the
+**final ~16%** of each phase — it reaches high accuracy briefly at each phase's end, not
+throughout. So the agent **partially** learns the reversal mapping; the +29k-vs-−24k reward gap
+is driven almost entirely by **not dying (5-HT)**. **Correction to the earlier 10-seed reading
+("DA marginal, NA null"):** at 51 seeds DA gives a small but significant *all-round* benefit
+(reward 29.4k vs 27.8k Holm p=0.012; latency 841 vs 943 p≈0; accuracy 0.43 vs 0.39 p≈0), and
+**NA is not null** — it significantly improves latency (841 vs 915, Holm p≈0) but *also raises
+deaths* (47 vs 39, p≈0) by exploring into the lethal arm, so its **net reward effect is nil**
+(p=0.93). **Honest framing: the capstone is a 5-HT-driven survival + integration win, NOT an
+"all three hormones cooperating" result** — but state DA's small all-round benefit and NA's
+latency/death trade-off (net-nil on reward) plainly, not as "DA marginal / NA null". NA's clean
+individual isolation is still claimed in **Exp 1**; the DA-strong probe
+(`tools/da_strong_probe.py`, exploratory) explores where DA's plasticity could matter more.
 
 *Sanity note (resolved):* Static ≡ Vanilla come out byte-identical **by construction, not
 aliasing** — verified this session: with hormones off the plastic `LocalRLWorker` reduces
@@ -499,7 +518,7 @@ Vanilla (p=0.006). **DA-gated plasticity impairs stable continuous control** —
 fast-weights that help discrete re-locking (Exp 1, Exp 3) hurt long-horizon balance.
 CSVs preserved as `*_cartpole.csv`.
 
-### 6.5 Generalist vs Specialists — the DIRECT novelty test (n=10) ✅ integration beats single-modulator gating
+### 6.5 Generalist vs Specialists — the DIRECT novelty test (n=51) ✅ integration beats single-modulator gating
 
 **Why this experiment exists.** The interim novelty (Slides 3/6/7) is *not* "a
 serotonin-like caution signal keeps an agent alive" — that is established prior work.
@@ -535,31 +554,32 @@ worst case — a task constant, never the other agents:
 
 | Agent | Task A latency ↓ | Adapt comp. | Task B reward ↑ | Deaths ↓ | Surv. comp. | Floor ↑ |
 |---|---|---|---|---|---|---|
-| **Full Model** | **165.1** | **0.81** | **+21,191** | **36** | **0.93** | **0.81** |
-| DA only | 368.4 | 0.58 | −21,510 | 480 | 0.04 | 0.04 |
-| NA only | 162.9 | 0.81 | −20,753 | 475 | 0.05 | 0.05 |
-| 5-HT only | 390.0 | 0.55 | +21,456 | 33 | 0.93 | 0.55 |
+| **Full Model** | **174.0** | **0.80** | **+20,886** | **36** | **0.93** | **0.80** |
+| DA only | 347.6 | 0.60 | −23,053 | 479 | 0.04 | 0.04 |
+| NA only | 178.2 | 0.80 | −21,855 | 468 | 0.06 | 0.06 |
+| 5-HT only | 381.7 | 0.56 | +21,185 | 33 | 0.93 | 0.56 |
 
 *(Floor = min over the two tasks of the agent's absolute competence. High floor = "good
-even on your weakest task". Note 5-HT-only floors at 0.55, not 0, because it genuinely
+even on your weakest task". Note 5-HT-only floors at 0.56, not 0, because it genuinely
 survives — it is merely slow to adapt; the honest numbers are stronger than the old
 manufactured 0.00.)*
 
 **Paired Full-vs-specialist tests (Holm-corrected across the 6-comparison family):**
-- **Adaptation:** Full ≪ DA-only (165 vs 368, Holm *p*=6.8×10⁻⁵ ✓) and Full ≪ 5-HT-only
-  (165 vs 390, Holm *p*=1.0×10⁻⁴ ✓). Full **ties** NA-only (165 vs 163, *p*=0.83) — NA is
+- **Adaptation:** Full ≪ DA-only (174 vs 348, Holm *p*≈0 ✓) and Full ≪ 5-HT-only
+  (174 vs 382, Holm *p*≈0 ✓). Full **ties** NA-only (174 vs 178, *p*=0.40) — NA is
   the adaptation specialist, so an expected tie, *not* a Full win.
-- **Survival:** Full ≫ DA-only (+21,191 vs −21,510, Holm *p*≈0 ✓) and Full ≫ NA-only
-  (+21,191 vs −20,753, Holm *p*=5×10⁻⁶ ✓). Full **ties** 5-HT-only (+21,191 vs +21,456,
-  *p*=0.44) — 5-HT is the survival specialist, expected tie.
+- **Survival:** Full ≫ DA-only (+20,886 vs −23,053, Holm *p*≈0 ✓) and Full ≫ NA-only
+  (+20,886 vs −21,855, Holm *p*≈0 ✓). Full **ties** 5-HT-only (+20,886 vs +21,185,
+  raw *p*=0.010, Holm-n.s.; 5-HT-only is if anything a hair higher) — 5-HT is the survival
+  specialist, expected tie.
 
 **Interpretation (the novelty, and it is defensible).** On **each** task the Full agent is
 statistically *tied with the best specialist* for that task, and *significantly beats every
 specialist that lacks the relevant hormone*. Therefore **no single-modulator agent is
 competent on both tasks**: DA-only and NA-only adapt but walk into the lethal arm (reward
-≈ −21k, ~470 deaths); 5-HT-only survives but is **>2× slower** to re-adapt (390 vs 165
-steps). Only the integrated tri-hormone agent keeps a high worst-task **floor (0.81 vs 0.55
-for 5-HT-only and ≤0.05 for the arms that die)**. This is the direct evidence for
+≈ −22k, ~470 deaths); 5-HT-only survives but is **>2× slower** to re-adapt (382 vs 174
+steps). Only the integrated tri-hormone agent keeps a high worst-task **floor (0.80 vs 0.56
+for 5-HT-only and ≤0.06 for the arms that die)**. This is the direct evidence for
 *"integration beats single-modulator gating"*: the architecture's value is that it is the
 **only configuration that is a generalist**, not that any one hormone is universally best.
 The head-to-head bars give the supervisor's requested per-baseline comparison (each
@@ -591,29 +611,32 @@ Baselines (`config.BASELINE_CONFIGS`): swept fixed ε ∈ {0.01, 0.05, 0.1, 0.2}
 **ε-decay** (1.0→0.05), and two **value-corrected** DQNs — **MSE** (no Huber clip) and
 **reward-scaled** Huber (×0.002, so −500 lands at Huber's balanced knee).
 
-**Pilot direction (2 seeds — REPLACE with the 10-seed numbers after running):**
+**Committed 51-seed results (`baselines_summary.csv` / `baselines_pvalues.csv`):**
 
 | Agent | Adapt latency ↓ (Exp 1) | Survival reward ↑ (Exp 2) |
 |---|---|---|
-| **Full Model** | **~174** | ~+18,600 |
-| DQN ε=0.01 (old baseline) | ~399 | −27,350 |
-| DQN ε=0.1 (best fixed ε) | ~260 | −26,215 |
-| DQN ε-decay | ~262 | −26,328 |
-| DQN MSE (value-corrected) | ~378 | **+16,062** |
-| DQN reward-scaled (value-corrected) | ~533 | **+22,270** |
+| **Full Model** | **174** | **+20,886** |
+| DQN ε=0.01 (old baseline) | 382 | −21,855 |
+| DQN ε=0.1 (best fixed ε) | 260 | −21,803 |
+| DQN ε-decay | 261 | −21,602 |
+| DQN MSE (value-corrected) | 360 | +19,289 |
+| DQN reward-scaled (value-corrected) | 486 | +20,366 |
 
-**What the pilot already shows (to be confirmed at n=10):**
+**What the committed 51-seed run shows:**
 - ✅ **C2 holds — NA survives the fair test.** Full re-locks far faster than *every* standard
-  DQN, including the **best-tuned fixed ε (0.1)** and the **ε-decay** schedule (~174 vs ~260).
-  So the NA advantage is over *tuned/annealed* exploration, not just ε=0.01. This *strengthens*
-  the Exp-1 claim.
-- ⚠️ **H2 does NOT hold as originally stated — the 5-HT "necessity" is largely a Huber
-  artefact.** Both value-corrected DQNs **survive Exp 2 without any serotonin** (MSE +16k;
-  reward-scaled *beats* Full at +22k), whereas the Huber baselines (any fixed ε) all die
-  (≈−27k). **Honest conclusion:** 5-HT is a valid, biologically-motivated *fix for a Huber-loss
-  DQN's under-weighting of rare catastrophes*, but it is **not required** to reach the safe
-  optimum — a correctly-scaled value function gets there too. State the 5-HT result with this
-  bound (see §6.1), and treat the value-corrected DQN as the honest survival reference.
+  DQN, including the **best-tuned fixed ε (0.1)** and the **ε-decay** schedule (174 vs 260),
+  all Holm-significant on both t and Wilcoxon. So the NA advantage is over *tuned/annealed*
+  exploration, not just ε=0.01. This *strengthens* the Exp-1 claim.
+- ⚠️ **H2: the 5-HT "necessity" is bounded — a value-corrected DQN also survives — but at 51
+  seeds it does NOT beat Full.** Both value-corrected DQNs **survive Exp 2 without any
+  serotonin** (MSE +19.3k, reward-scaled +20.4k), whereas every Huber baseline (any fixed ε,
+  ε-decay) dies (≈−20k to −23k). **Corrects the 2-seed pilot's "reward-scaled beats Full at
+  +22k":** at 51 seeds Full (+20.9k) **beats MSE** (Holm p<10⁻⁴) and **ties reward-scaled**
+  (p=0.56) — no value-corrected DQN beats Full. **Honest conclusion:** 5-HT is a valid,
+  biologically-motivated *fix for a Huber-loss DQN's under-weighting of rare catastrophes*, and
+  it is **not required** to reach the safe optimum — a correctly-scaled value function gets
+  there too (so state the 5-HT result with this bound, §6.1) — but the tri-hormone agent is
+  still at least as good as the best value-corrected DQN, not beaten by it.
 
 *(This is exactly what the fair-baseline study is for. Reporting it is more defensible than the
 original unbounded "5-HT necessary to survive" claim, and it sharpens the real contribution: a
@@ -641,7 +664,7 @@ bio-inspired mechanism that repairs a known DQN failure mode from the policy sid
 | PLASTIC_ALPHA_INIT / η_decay / η_trace | 0.002 / 0.05 / 0.01 | plasticity strength & trace dynamics |
 | HIDDEN_DIM / BATCH / TARGET_SYNC | 128 / 64 / 100 | DQN hyperparameters |
 | REPLAY | **per-exp: E1 500 / E2 5000 / E3 600** (fallback 500) | small→forget stale rewards; large→retain rare deaths |
-| SEEDS | 42…51 (10) | statistical replicates |
+| SEEDS | 42…92 (51) | statistical replicates |
 | Exp1 (bandit) | 5 arms, 4,000 steps, switches [500,1100,1800,3000], μ_hi/lo=10/2 | |
 | Exp2 (foraging) | 5,000 steps, safe +5, risky +50 / 10% death −500 | |
 | Exp3 (contextual capstone) | 3 cues, 6,000 steps, 5 reversals [1000…5000], μ_hi/lo=10/2, risky +50 / 10% death −500, replay 600 | |
@@ -663,9 +686,14 @@ bio-inspired mechanism that repairs a known DQN failure mode from the policy sid
 4. **NA keys on reward, DA on TD-error.** Split by design: reward-drop = environmental
    worsening (NA→explore); TD-surprise = model error (DA→plasticity/α). On CartPole
    (constant +1 reward) NA is intentionally quiet and DA carries adaptation.
-5. **Opponent processing halves DA_eff at rest** (σ(0)=0.5). Retained from the spec;
-   internally consistent (all rest-references use 0.5). Flagged as a design choice to
-   discuss, not a bug.
+5. **Opponent processing (5-HT suppresses DA) is only partially realised — see Threats
+   §H1/§H2 below.** `DA_eff = DA·(1−σ(5HT−B))` halves at rest (σ(0)=0.5; all rest-references
+   use 0.5, internally consistent). BUT the two places DA_eff reaches behaviour — the plastic
+   gate and α — use its *magnitude* `|DA_eff−0.5|`, so elevated 5-HT (which lowers DA_eff)
+   actually *raises* the gate/α when DA is near rest (non-monotone) — the opposite of the
+   intended "suppress DA". This is an audit finding, not a claimed feature; the final write-up
+   should either fix the wiring (make the gate signed) or retire the "synergistic opponent
+   processing" novelty in favour of the honest "generalist coverage" framing (§6.5, §10).
 6. **Death in Exp 2 is terminal-like** (bootstrap cut via done-flag) but the episode
    continues with cumulative score reset — models "loss of progress", not end of run.
 7. **Competence/recovery thresholds** (350/300 of 500) are judgement calls applied
@@ -675,8 +703,8 @@ bio-inspired mechanism that repairs a known DQN failure mode from the policy sid
 
 ## 9. Threats to validity & limitations (Threats-to-Validity section)
 
-- **n=10 seeds.** Ample for the large effects. **Correction:** at n=10 **NA *is* cleanly
-  isolated** on the bandit (latency 165 vs 368, Holm p=1.7×10⁻⁴) — the earlier "NA
+- **n=51 seeds.** Ample for the large effects. **Correction:** at n=51 **NA *is* cleanly
+  isolated** on the bandit (latency 174 vs 348, Holm p≈0) — the earlier "NA
   under-powered (p=0.23)" note came from a stale single-seed pilot and is retracted. Still
   report CIs, not just p.
 - **H2 — the 5-HT survival win is bounded to a *Huber-loss* baseline (§6.6).** A value-corrected
@@ -710,6 +738,21 @@ bio-inspired mechanism that repairs a known DQN failure mode from the policy sid
 - **DA-plasticity is at best neutral, sometimes harmful** on every task tested; its intended
   benefit (rapid intra-lifetime re-adaptation) is not demonstrated. The DA-strong probe
   (`tools/da_strong_probe.py`) is an exploratory attempt to find a regime where it matters.
+- **H1 (audit finding) — opponent processing is not wired to *suppress* DA.** The plastic gate
+  `clip(2·|DA_eff−0.5|,0,1)` and `α ∝ 1+|DA_eff−0.5|` are magnitude functions with a minimum at
+  rest, so raising 5-HT (which drives DA_eff *below* 0.5) *increases* plasticity/α when DA is
+  near rest — opposite to the interim's "serotonin inhibits dopamine" claim, and non-monotone in
+  general (verified numerically: with DA at rest, gate = 0.00 → 0.46 → 0.76 → 0.91 as 5-HT rises
+  1 → 2 → 3 → 4). The synergy / opponent-processing selling point is therefore **not demonstrated
+  by the code**; report the result as generalist coverage (§6.5), or make the gate signed and re-run.
+- **H2 (audit finding) — the DA and 5-HT ablations are entangled.** Because the gate and α depend
+  on `DA_eff = DA·(1−σ(5HT))`, "Ablated DA" still has an active plastic gate + elevated α whenever
+  5-HT is high (Exp 2/3), and "Ablated 5-HT" *also* removes that DA_eff-driven α/plasticity change.
+  So neither is a perfectly clean single-variable ablation in the tasks with deaths (it **is** clean
+  in Exp 1, where 5-HT never spikes). The headline effects survive — they are huge and independently
+  corroborated by the fair-baseline study — but the *ablation-isolation* argument for DA/5-HT in
+  Exp 2/3 should carry this caveat, or the control laws be decoupled (gate/α from DA only, harm from
+  5-HT only) and the studies re-run.
 - **Toy environments.** Bandit / two-choice foraging / contextual capstone / CartPole are
   deliberately minimal to isolate each hormone; generalisation to richer domains is untested.
 
@@ -720,7 +763,7 @@ bio-inspired mechanism that repairs a known DQN failure mode from the policy sid
 **Honest headline the results support (revised after the fair-baseline study):**
 *"The full multi-neuromodulated agent's value is (1) a cleanly-isolated **noradrenergic
 adaptation** win and (2) **generalist coverage** across task niches that no single modulator
-achieves. On a volatile bandit it re-locks after a reward switch ~58% faster than a standard
+achieves. On a volatile bandit it re-locks after a reward switch ~54% faster than a standard
 DQN — and, critically, faster than the **best swept-ε and ε-decay** DQN (§6.6) — an advantage
 the ablation attributes specifically to noradrenaline (removing NA nearly doubles latency, Holm
 p=1.7×10⁻⁴; removing dopamine changes nothing). On high-stakes foraging, a serotonergic
@@ -977,8 +1020,9 @@ Each stage lists the **action**, the **rationale**, and the **result**.
   Ablated-NA 207 vs Ablated-DA 121 (NA helps, DA doesn't); Exp-2 Full 6.7% risky-pulls vs
   Ablated-5HT 99.3%.
 - **C1 — narrative vs data (the big fix).** The committed `pvalues.csv` shows **NA** is the
-  isolated Exp-1 driver (Full vs Ablated-NA latency 165 vs 368, Holm p=1.7×10⁻⁴), and DA is
-  inert (p=0.83) — the **opposite** of the earlier "DA is the bigger contributor" prose (a
+  isolated Exp-1 driver (Full vs Ablated-NA latency 174 vs 348 at 51 seeds, Holm p≈0; the
+  Stage-10 audit itself saw 165 vs 368 at 10 seeds), and DA is
+  inert (p=0.40) — the **opposite** of the earlier "DA is the bigger contributor" prose (a
   seed-42 pilot artefact). Rewrote §0, §6.1, §6.2, §6.3, §10, and the Stage-2 note to match the
   data; added `tools/make_tables.py` so every §6 table is **regenerated from the CSVs**
   (`RESULTS_TABLES.md`) rather than hand-copied — closing the drift that caused C1.
@@ -1008,5 +1052,6 @@ Each stage lists the **action**, the **rationale**, and the **result**.
 - **Net effect on the thesis.** The **NA/adaptation** win is *stronger* and cleaner; the
   **5-HT/survival** win is *honestly bounded* to a Huber-loss baseline; **generalist coverage**
   remains the novelty; **DA** is a documented negative. Every claim now traces to a committed CSV.
-  ⚠️ **Pending (user runs):** the 10-seed `--baselines` study, then `tools/make_tables.py` to fill
-  §6.6's final numbers (the table there is a 2-seed pilot placeholder).
+  ✅ **Done (2026-07-19):** the `--baselines` study was run at **51 seeds** and §6.6 /
+  `RESULTS_TABLES.md` now carry the committed numbers — Full **beats** MSE (Holm p<10⁻⁴) and
+  **ties** reward-scaled (p=0.56), correcting the 2-seed pilot's "reward-scaled beats Full".

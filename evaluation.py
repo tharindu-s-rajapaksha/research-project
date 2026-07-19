@@ -269,7 +269,9 @@ def plot_experiment_cartpole(results: dict, suffix: str = ""):
     ax.set(xlabel="Episode", ylabel="Reward", title="Episode Reward")
 
     plt.tight_layout(rect=[0, 0, 1, 0.95])
-    fname = os.path.join(cfg.RESULTS_DIR, f"exp3_dashboard{suffix}.png")
+    # Distinct filename from plot_experiment_3 — the legacy CartPole plot used to
+    # overwrite the capstone dashboard (both wrote exp3_dashboard*.png).
+    fname = os.path.join(cfg.RESULTS_DIR, f"cartpole_dashboard{suffix}.png")
     fig.savefig(fname, bbox_inches="tight")
     plt.close(fig)
     print(f"  [Saved] {fname}")

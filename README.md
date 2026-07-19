@@ -36,7 +36,7 @@ pip install torch numpy gymnasium matplotlib seaborn pygame
 
 ## Usage Commands
 
-### Full Multi-Seed Study (10 seeds, all configs, parallel)
+### Full Multi-Seed Study (51 seeds, all configs, parallel)
 ```bash
 # All 3 experiments
 python main.py --workers 12
@@ -46,12 +46,12 @@ python main.py --exp 1 --workers 12
 python main.py --exp 2 --workers 12
 python main.py --exp 3 --workers 12
 ```
-#### Generalist vs. Specialists Study (10 seeds)
+#### Generalist vs. Specialists Study (51 seeds)
 ```bash
 python main.py --generalist --workers 12
 ```
 
-#### Fair-Baseline Battery — "beats STANDARD RL?" (10 seeds)
+#### Fair-Baseline Battery — "beats STANDARD RL?" (51 seeds)
 Compares the Full agent against **well-tuned standard DQNs** (swept-ε, ε-decay, and
 value-corrected MSE / reward-scaled), not just the near-greedy ε=0.01 baseline. This is the
 honest "beats standard RL" test — see `RESEARCH_NOTES.md` §6.6.
@@ -98,9 +98,10 @@ Every number traces to a committed CSV (`research_results/`, regenerate tables w
 `python tools/make_tables.py`). Full details + statistics in `RESEARCH_NOTES.md`.
 
 - **Adaptation (Exp 1) — the strongest, cleanest win.** The Full agent re-locks after a reward
-  switch ~58% faster than a standard DQN, and faster than the best **swept-ε / ε-decay** DQN
-  (fair-baseline study). The ablation isolates this to **noradrenaline** (removing NA nearly
-  doubles latency, Holm p=1.7×10⁻⁴; removing dopamine changes nothing).
+  switch ~54% faster than a standard DQN (174 vs 382 steps), and faster than the best
+  **swept-ε / ε-decay** DQN (fair-baseline study). The ablation isolates this to
+  **noradrenaline** (removing NA nearly doubles latency, 174 → 348, Holm p≈0; removing
+  dopamine changes nothing, 174 → 178, p=0.40).
 - **Survival (Exp 2) — a real but *bounded* win.** vs a Huber-loss DQN, 5-HT behavioural
   inhibition cuts deaths ~13×. **Honest bound:** a *value-corrected* DQN (MSE / reward-scaled)
   also avoids the trap without serotonin, so 5-HT **repairs a known DQN loss-function pathology**
@@ -119,7 +120,7 @@ Tests the agent's ability to detect shifts in reward distributions. Noradrenalin
 Tests survival and harm aversion. Serotonin (5-HT) spikes during "near-death" or high-risk scenarios to enforce a safer policy.
 
 ### Exp 3: Volatile Risky Foraging (CAPSTONE — integration + survival)
-An integrative task that **fuses Exp 1 and Exp 2**: a contextual cue→action mapping that **reverses** over time (volatility → NA/DA), plus a tempting but occasionally **lethal** arm (→ 5-HT). Headline metric: **cumulative reward**. Honest result (see `RESEARCH_NOTES.md` §6.3): the Full agent **massively beats standard RL**, but the win is driven by **5-HT survival** (not dying), with DA giving a marginal re-adaptation-latency benefit and NA no measurable effect here; overall accuracy ≈0.41, so the agent only *partially* learns the reversal mapping. It is an **integration + survival** result, **not** an "all three hormones cooperating" result.
+An integrative task that **fuses Exp 1 and Exp 2**: a contextual cue→action mapping that **reverses** over time (volatility → NA/DA), plus a tempting but occasionally **lethal** arm (→ 5-HT). Headline metric: **cumulative reward**. Honest result (see `RESEARCH_NOTES.md` §6.3): the Full agent **massively beats standard RL**, but the win is driven by **5-HT survival** (not dying). At 51 seeds **both DA and NA** give a modest, statistically-significant re-adaptation-latency benefit (Full 841 vs Ablated-DA 943 and Ablated-NA 915 steps, both Holm p<10⁻⁴) — though NA also *raises* deaths by exploring into the lethal arm (47 vs 39), so its **net reward** effect is nil (p=0.93), whereas DA modestly raises reward (p=0.004). Overall accuracy ≈0.43, so the agent only *partially* learns the reversal mapping. It is an **integration + survival** result, **not** an "all three hormones cooperating" result.
 
 ### (Legacy) CartPole Physics Adaptation — secondary / negative result
 Kept via `experiments.run_experiment_cartpole` to reproduce the honest finding that DA-gated plasticity *helps* discrete re-mapping but *hurts* stable continuous control. Not part of the default suite.
